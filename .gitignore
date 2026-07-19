@@ -1,0 +1,41 @@
+# dependencies
+node_modules/
+
+# build
+dist/
+.vite/
+*.tsbuildinfo
+
+# secrets — never commit real keys
+.env
+.env.*
+!.env.example
+
+# logs & local
+*.local
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# coverage / caches
+coverage/
+.cache/
+.turbo/
+.eslintcache
+
+# source maps (production builds should not emit them)
+*.map
