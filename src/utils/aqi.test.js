@@ -3,6 +3,8 @@ import {
   calcMatchEquivalents,
   getAqiLevel,
   approxCnAqiFromUs,
+  cnAqiFromPm25,
+  resolveDisplayAqi,
   formatMatchCount,
   pickConcentration,
 } from './aqi'
@@ -51,6 +53,27 @@ describe('approxCnAqiFromUs', () => {
   })
 })
 
+describe('cnAqiFromPm25', () => {
+  it('maps common breakpoints', () => {
+    expect(cnAqiFromPm25(0)).toBe(0)
+    expect(cnAqiFromPm25(35)).toBe(50)
+    expect(cnAqiFromPm25(75)).toBe(100)
+    // PM2.5 55 ≈ 国标 AQI 75（良）
+    expect(cnAqiFromPm25(55)).toBe(75)
+  })
+})
+
+describe('resolveDisplayAqi', () => {
+  it('prefers CN AQI when reported looks like US AQI', () => {
+    // 153 对 PM2.5 55 明显偏美标
+    expect(resolveDisplayAqi({ pm25: 55, aqi: 153 })).toBe(75)
+  })
+
+  it('keeps reported CN AQI when consistent', () => {
+    expect(resolveDisplayAqi({ pm25: 55, aqi: 78 })).toBe(78)
+  })
+})
+
 describe('formatMatchCount', () => {
   it('formats integers and tenths', () => {
     expect(formatMatchCount(4)).toBe('4')
@@ -79,6 +102,8 @@ describe('resolveFireMode', () => {
     expect(resolveFireMode({ aqi: 80, matchesPerHour: 4 })).toBe('cluster')
     expect(resolveFireMode({ aqi: 160, matchesPerHour: 2 })).toBe('bonfire')
     expect(resolveFireMode({ aqi: 10, matchesPerHour: 9 })).toBe('bonfire')
+    // 火柴当量优先：3.4 根/时 → 一簇，不被偏高 AQI 单独抬成火堆
+    expect(resolveFireMode({ aqi: 75, matchesPerHour: 3.4, concentration: 55 })).toBe('cluster')
   })
 })
 

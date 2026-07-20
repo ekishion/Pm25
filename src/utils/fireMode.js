@@ -29,10 +29,14 @@ export const MODE_THRESHOLDS = {
  */
 export function resolveFireMode(input = {}) {
   const n = Number(input.matchesPerHour) || 0
-  const aqi = Number(input.aqi ?? input.concentration) || 0
+  const aqi = Number(input.aqi) || 0
+  // 浓度辅助：避免只有 PM2.5、AQI 缺失时形态偏弱
+  const conc = Number(input.concentration) || 0
   const { bonfireAqi, bonfireMatches, clusterAqi, clusterMatches } = MODE_THRESHOLDS
-  if (aqi >= bonfireAqi || n >= bonfireMatches) return FIRE_MODE.bonfire
-  if (aqi >= clusterAqi || n >= clusterMatches) return FIRE_MODE.cluster
+  // 火柴当量优先（体验主轴）；AQI/浓度二次门槛
+  // 注意：国标 AQI 与 PM2.5 不同尺度，conc 用 μg/m³ 门槛
+  if (n >= bonfireMatches || aqi >= bonfireAqi || conc >= 150) return FIRE_MODE.bonfire
+  if (n >= clusterMatches || aqi >= clusterAqi || conc >= 75) return FIRE_MODE.cluster
   return FIRE_MODE.match
 }
 

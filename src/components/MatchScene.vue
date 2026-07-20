@@ -205,12 +205,12 @@ const matchStyles = computed(() => {
 
 const smokeStyles = computed(() => {
   const mode = displayMode.value
-  const spread = mode === 'bonfire' ? 96 : mode === 'cluster' ? 52 : 36
-  const baseSize = mode === 'bonfire' ? 48 : mode === 'cluster' ? 34 : 28
+  const spread = mode === 'bonfire' ? 52 : mode === 'cluster' ? 52 : 36
+  const baseSize = mode === 'bonfire' ? 40 : mode === 'cluster' ? 34 : 28
   const list = []
   for (let i = 0; i < smokeCount.value; i += 1) {
     const left = 50 + (((i * 47) % spread) - spread / 2)
-    const size = baseSize + (i % 4) * (mode === 'bonfire' ? 16 : 10)
+    const size = baseSize + (i % 4) * (mode === 'bonfire' ? 12 : 10)
     const duration =
       mode === 'bonfire'
         ? 5.4 + (i % 4) * 1.1 + props.intensity * 0.8
@@ -219,9 +219,9 @@ const smokeStyles = computed(() => {
           : 3.4 + (i % 3) * 0.5
     list.push({
       left: `${left}%`,
-      bottom: `${mode === 'bonfire' ? 22 + (i % 4) * 4 : 28}%`,
+      bottom: `${mode === 'bonfire' ? 24 + (i % 3) * 3 : 28}%`,
       width: `${size}px`,
-      height: `${size * (mode === 'bonfire' ? 1.2 : 1.25)}px`,
+      height: `${size * (mode === 'bonfire' ? 1.15 : 1.25)}px`,
       animationDuration: `${duration}s`,
       animationDelay: `${(i * 0.38) % 4.2}s`,
     })
@@ -416,8 +416,8 @@ const bonfireFlameStyles = computed(() => {
   margin: 0 auto;
   display: grid;
   place-items: center;
-  overflow: hidden;
-  contain: layout paint;
+  overflow: visible;
+  contain: layout;
 }
 
 .floor {
@@ -468,9 +468,9 @@ const bonfireFlameStyles = computed(() => {
 }
 
 .mode-bonfire .glow {
-  width: 96%;
-  height: 66%;
-  bottom: 10%;
+  width: 78%;
+  height: 58%;
+  bottom: 12%;
   background: radial-gradient(
     ellipse at 50% 78%,
     rgba(255, 148, 52, calc(0.28 * var(--intensity))),
@@ -1215,10 +1215,24 @@ const bonfireFlameStyles = computed(() => {
 .smoke-layer,
 .ember-layer {
   position: absolute;
-  inset: 0 0 16% 0;
+  inset: -6% -4% 14% -4%;
   pointer-events: none;
   overflow: hidden;
-  contain: strict;
+  contain: paint;
+  -webkit-mask-image: radial-gradient(
+    ellipse 62% 78% at 50% 72%,
+    #000 0%,
+    #000 46%,
+    rgba(0, 0, 0, 0.55) 68%,
+    transparent 86%
+  );
+  mask-image: radial-gradient(
+    ellipse 62% 78% at 50% 72%,
+    #000 0%,
+    #000 46%,
+    rgba(0, 0, 0, 0.55) 68%,
+    transparent 86%
+  );
 }
 
 .smoke {
@@ -1239,7 +1253,7 @@ const bonfireFlameStyles = computed(() => {
 
 .mode-bonfire .smoke,
 .mode-cluster .smoke {
-  mix-blend-mode: multiply;
+  mix-blend-mode: normal;
 }
 
 .mode-bonfire .smoke {

@@ -177,24 +177,31 @@ function mergeHints(hints) {
     best.province = domestic.province || best.province
     best.source = domestic.source
     if (domestic.adcode) best.adcode = domestic.adcode
+    // 国内源自带坐标才用；不要拿 ipwho 的北京坐标配「苏州」
     if (hasCoords(domestic)) {
       best.lat = domestic.lat
       best.lon = domestic.lon
+    } else {
+      best.lat = null
+      best.lon = null
+      // 标记：城市可信、坐标待地理编码
+      best.needsGeocode = true
     }
   }
 
   for (const h of list) {
     if (!best.adcode && h.adcode) best.adcode = h.adcode
-    if (!hasCoords(best) && hasCoords(h) && h.source !== 'ipwho') {
+    if (!best.ip && h.ip) best.ip = h.ip
+    if (!best.province && h.province) best.province = h.province
+    // 非国内城市场景：可用非 ipwho 坐标
+    if (!domestic && !hasCoords(best) && hasCoords(h) && h.source !== 'ipwho') {
       best.lat = h.lat
       best.lon = h.lon
     }
-    if (!best.ip && h.ip) best.ip = h.ip
-    if (!best.province && h.province) best.province = h.province
   }
 
-  // 仍无坐标时，才考虑用 ipwho 的坐标（城市仍用国内源）
-  if (!hasCoords(best)) {
+  // 仅当没有国内城市线索时，才用 ipwho 坐标
+  if (!domestic && !hasCoords(best)) {
     const withCoord = list.find((h) => hasCoords(h))
     if (withCoord) {
       best.lat = withCoord.lat
@@ -211,52 +218,40 @@ function mergeHints(hints) {
 }
 
 async function ensureCoords(loc) {
-  if (usable(loc)) return loc
+  // 国内城市名来自 ipip 但无坐标时，必须地理编码，禁止沿用 ipwho 北京点
+  const forceGeo = Boolean(loc.needsGeocode) || !hasCoords(loc)
+  if (!forceGeo && usable(loc)) return loc
 
-  if (loc.ip && isIpv4(loc.ip)) {
+  // 有可信城市名 → 直接地理编码到该城市中心
+  if (loc.city && loc.city !== '未知') {
     try {
-      const amap = await fromAmapIp(loc.ip)
-      if (usable(amap)) {
-        return buildLoc({
-          source: 'amap',
-          city: amap.city || loc.city,
-          province: amap.province || loc.province,
-          adcode: amap.adcode || loc.adcode,
-          lat: amap.lat,
-          lon: amap.lon,
-          ip: loc.ip,
-        })
-      }
-      if (hasCoords(amap)) {
-        return buildLoc({
-          source: loc.source,
-          city: loc.city,
-          province: loc.province || amap.province,
-          adcode: amap.adcode || loc.adcode,
-          lat: amap.lat,
-          lon: amap.lon,
-          ip: loc.ip,
-        })
-      }
+      const g = await geocodeCity(loc.city, loc.province)
+      return buildLoc({
+        source: loc.source === 'ipip' || loc.source === 'amap' ? loc.source : 'geocode',
+        city: loc.city || g.city,
+        province: loc.province || g.province,
+        adcode: loc.adcode || g.adcode,
+        lat: g.lat,
+        lon: g.lon,
+        ip: loc.ip,
+      })
     } catch {
-      /* geocode next */
+      /* fall through */
     }
   }
 
-  try {
-    const g = await geocodeCity(loc.city, loc.province)
-    return buildLoc({
-      source: loc.source,
-      city: loc.city || g.city,
-      province: loc.province || g.province,
-      adcode: loc.adcode || g.adcode,
-      lat: g.lat,
-      lon: g.lon,
-      ip: loc.ip,
-    })
-  } catch {
-    throw new Error('no coords')
+  // 无城市名时：IPv4 → 高德 IP 矩形
+  if (loc.ip && isIpv4(loc.ip)) {
+    try {
+      const amap = await fromAmapIp(loc.ip)
+      if (usable(amap)) return amap
+    } catch {
+      /* ignore */
+    }
   }
+
+  if (usable(loc)) return loc
+  throw new Error('no coords')
 }
 
 async function detectLocationOnce() {

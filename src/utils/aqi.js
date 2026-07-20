@@ -16,10 +16,66 @@ export function getAqiLevel(aqi) {
   return AQI_LEVELS.find((level) => value <= level.max) || AQI_LEVELS[AQI_LEVELS.length - 1]
 }
 
+/**
+ * 中国 AQI（HJ 633）由 PM2.5 浓度反算。
+ * 断点: μg/m³ → AQI
+ */
+const PM25_CN_BREAKPOINTS = [
+  [0, 0],
+  [35, 50],
+  [75, 100],
+  [115, 150],
+  [150, 200],
+  [250, 300],
+  [350, 400],
+  [500, 500],
+]
+
+export function cnAqiFromPm25(pm25) {
+  const c = Number(pm25)
+  if (!Number.isFinite(c) || c < 0) return null
+  if (c >= 500) return 500
+  for (let i = 1; i < PM25_CN_BREAKPOINTS.length; i += 1) {
+    const [clow, ilow] = PM25_CN_BREAKPOINTS[i - 1]
+    const [chigh, ihigh] = PM25_CN_BREAKPOINTS[i]
+    if (c <= chigh) {
+      if (chigh === clow) return ihigh
+      const aqi = ((ihigh - ilow) / (chigh - clow)) * (c - clow) + ilow
+      return Math.round(aqi)
+    }
+  }
+  return 500
+}
+
+/**
+ * 旧名保留：若只有 US AQI 无浓度，无法精确换算，原样返回（不推荐依赖）。
+ * 有 PM2.5 时请用 cnAqiFromPm25。
+ */
 export function approxCnAqiFromUs(usAqi) {
   const v = Number(usAqi)
   if (!Number.isFinite(v)) return null
   return Math.round(v)
+}
+
+/**
+ * 展示/模式用 AQI：优先可信的国标值。
+ * 若同时有 PM2.5，且上报 AQI 明显高于国标反算（常见于美标），改用反算值。
+ */
+export function resolveDisplayAqi({ pm25, aqi } = {}) {
+  const p = Number(pm25)
+  const a = Number(aqi)
+  const hasP = Number.isFinite(p) && p >= 0
+  const hasA = Number.isFinite(a) && a >= 0
+  const fromPm = hasP ? cnAqiFromPm25(p) : null
+
+  if (hasA && fromPm != null) {
+    // 上报 AQI 比国标反算高一截 → 多半是 US AQI
+    if (a > fromPm * 1.35 + 15) return fromPm
+    return Math.round(a)
+  }
+  if (hasA) return Math.round(a)
+  if (fromPm != null) return fromPm
+  return null
 }
 
 /**

@@ -49,7 +49,9 @@ Copy [`.env.example`](.env.example) → `.env`.
 | Variable | Purpose | In browser bundle? |
 |----------|---------|--------------------|
 | `AMAP_KEY` | Amap IP + geocode + weather | **No** |
-| `CAIYUN_TOKEN` | Caiyun realtime AQI | **No** |
+| `QWEATHER_KEY` | QWeather (HeWeather) air quality — **preferred** | **No** |
+| `QWEATHER_HOST` | Optional API host (default `devapi.qweather.com`) | **No** |
+| `CAIYUN_TOKEN` | Caiyun AQI fallback | **No** |
 | `WAQI_TOKEN` | WAQI fallback (default `demo`) | **No** |
 
 > **Do not use a `VITE_` prefix for secrets.**  
@@ -95,10 +97,12 @@ Enable at least:
    | Name | Required |
    |------|----------|
    | `AMAP_KEY` | recommended |
-   | `CAIYUN_TOKEN` | recommended |
+   | `QWEATHER_KEY` | recommended（空气优先） |
+   | `QWEATHER_HOST` | optional |
+   | `CAIYUN_TOKEN` | optional fallback |
    | `WAQI_TOKEN` | optional (`demo`) |
 
-3. Deploy. Routes under `/api/amap/*`, `/api/caiyun/*`, `/api/waqi/*` are handled by Edge functions.
+3. Deploy. Routes under `/api/amap/*`, `/api/qweather/*`, `/api/caiyun/*`, `/api/waqi/*` are handled by Edge functions.
 
 ### Cloudflare Pages
 
@@ -114,7 +118,7 @@ Optional local config: [`wrangler.toml`](wrangler.toml).
 ```
 public IP → city (approx)
          → geocode / Amap IP rectangle → coarse lat/lon
-         → AQI / PM2.5 (Caiyun → WAQI → Open-Meteo, race)
+         → AQI / PM2.5 (QWeather → Caiyun → WAQI → Open-Meteo)
          → matches/hour ≈ concentration × 0.5 ÷ 8
          → clean · match · cluster · bonfire
 ```
@@ -128,8 +132,8 @@ public IP → city (approx)
 
 ### Air quality
 
-- Parallel race; first valid reading wins
-- If `pm25=0` but `aqi>2`, zero is treated as missing → use AQI
+- Priority: **QWeather (CN station)** → Caiyun → WAQI → Open-Meteo model
+- Prefer China AQI (`cn-mee` / concentration-derived); reject bogus `pm25=0`
 - UI can show both PM2.5 and AQI
 
 ### Match conversion

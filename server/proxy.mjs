@@ -11,6 +11,7 @@ const UPSTREAM = {
   amap: 'https://restapi.amap.com',
   caiyun: 'https://api.caiyunapp.com',
   waqi: 'https://api.waqi.info',
+  qweather: 'https://devapi.qweather.com',
 }
 
 /** 与前端 http.js 保持一致 */
@@ -110,7 +111,7 @@ function withSearch(path, searchParams, mutator) {
 
 /**
  * @param {Request} request
- * @param {{ provider: 'amap'|'caiyun'|'waqi', env: Record<string, string|undefined>, pathSuffix?: string }} opts
+ * @param {{ provider: 'amap'|'caiyun'|'waqi'|'qweather', env: Record<string, string|undefined>, pathSuffix?: string }} opts
  */
 export async function proxyProvider(request, { provider, env, pathSuffix }) {
   if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -159,6 +160,18 @@ export async function proxyProvider(request, { provider, env, pathSuffix }) {
         if (!sp.get('token')) sp.set('token', token)
       })
       return forward(`${UPSTREAM.waqi}${path}`, request.method)
+    }
+
+    if (provider === 'qweather') {
+      const key = env.QWEATHER_KEY || env.HEWEATHER_KEY || ''
+      if (!key) return jsonError('QWEATHER_KEY missing', 500)
+      const hostRaw = (env.QWEATHER_HOST || UPSTREAM.qweather).replace(/\/+$/, '')
+      const base = hostRaw.startsWith('http') ? hostRaw : `https://${hostRaw}`
+      const path = withSearch(rest || '/', url.searchParams, (sp) => {
+        if (!sp.get('key')) sp.set('key', key)
+        if (!sp.get('lang')) sp.set('lang', 'zh')
+      })
+      return forward(`${base}${path}`, request.method)
     }
 
     return jsonError('unknown provider', 404)

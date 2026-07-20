@@ -49,7 +49,9 @@ npm run dev
 | 变量 | 用途 | 是否打进浏览器包 |
 |------|------|------------------|
 | `AMAP_KEY` | 高德 IP + 地理编码 + 天气 | **否** |
-| `CAIYUN_TOKEN` | 彩云实时空气 | **否** |
+| `QWEATHER_KEY` | 和风空气质量（**优先**） | **否** |
+| `QWEATHER_HOST` | 可选 API Host（默认 `devapi.qweather.com`） | **否** |
+| `CAIYUN_TOKEN` | 彩云空气（备用） | **否** |
 | `WAQI_TOKEN` | WAQI 备用（默认 `demo`） | **否** |
 
 > **密钥不要使用 `VITE_` 前缀。**  
@@ -95,7 +97,9 @@ Vercel / Cloudflare 上的 `/api/*` 要求：
    | 变量 | 是否必需 |
    |------|----------|
    | `AMAP_KEY` | 建议 |
-   | `CAIYUN_TOKEN` | 建议 |
+   | `QWEATHER_KEY` | 建议（空气优先） |
+   | `QWEATHER_HOST` | 可选 |
+   | `CAIYUN_TOKEN` | 可选备用 |
    | `WAQI_TOKEN` | 可选（默认 `demo`） |
 
 3. 部署。`/api/amap/*`、`/api/caiyun/*`、`/api/waqi/*` 由 Edge 函数处理。
@@ -114,7 +118,7 @@ Vercel / Cloudflare 上的 `/api/*` 要求：
 ```
 公网 IP → 城市（约）
        → 地理编码 / 高德 IP 矩形 → 粗 lat/lon
-       → AQI / PM2.5（彩云 → WAQI → Open-Meteo，抢跑）
+       → AQI / PM2.5（和风 → 彩云 → WAQI → Open-Meteo）
        → 根/时 ≈ 浓度 × 0.5 ÷ 8
        → 极净 · 单根 · 一簇 · 篝火
 ```
@@ -128,8 +132,8 @@ Vercel / Cloudflare 上的 `/api/*` 要求：
 
 ### 空气质量
 
-- 多源并行抢跑，先到的有效读数胜出
-- 若 `pm25=0` 但 `aqi>2`，0 视为缺测 → 用 AQI
+- 优先级：**和风（国标站点）** → 彩云 → WAQI → Open-Meteo 模型兜底
+- 优先中国 AQI；`pm25=0` 但 `aqi>2` 时 0 视为缺测
 - 界面可同时显示 PM2.5 与 AQI
 
 ### 火柴换算
@@ -227,4 +231,4 @@ Vercel / Cloudflare 上的 `/api/*` 要求：
 
 ## 许可
 
-MIT — 数据归属各提供方（高德 / 彩云 / WAQI / Open-Meteo / ipwho / ipip）。
+MIT — 数据归属各提供方（高德 / 和风 / 彩云 / WAQI / Open-Meteo / ipwho / ipip）。

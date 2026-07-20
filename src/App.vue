@@ -73,7 +73,8 @@ const matchInfo = computed(() =>
 const mode = computed(() =>
   resolveFireMode({
     matchesPerHour: matchInfo.value.matchesPerHour,
-    aqi: air.value?.aqi ?? matchInfo.value.concentration,
+    aqi: air.value?.aqi,
+    concentration: matchInfo.value.concentration,
   }),
 )
 
@@ -776,14 +777,14 @@ onUnmounted(() => {
   min-height: 0;
   max-width: 100%;
   padding: 4px 0 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .scene-wrap {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   transform: translateY(6px) scale(0.975);
   opacity: 0.92;
   filter: hue-rotate(calc((var(--flame-hue, 1) - 1) * 18deg))

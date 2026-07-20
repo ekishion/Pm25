@@ -62,6 +62,14 @@ function buildProxy(env) {
   const amapKey = env.AMAP_KEY || ''
   const caiyunToken = env.CAIYUN_TOKEN || ''
   const waqiToken = env.WAQI_TOKEN || 'demo'
+  const qweatherKey = env.QWEATHER_KEY || env.HEWEATHER_KEY || ''
+  const qweatherHost = (env.QWEATHER_HOST || 'https://devapi.qweather.com').replace(
+    /\/+$/,
+    '',
+  )
+  const qweatherTarget = qweatherHost.startsWith('http')
+    ? qweatherHost
+    : `https://${qweatherHost}`
 
   return {
     '/api/amap': {
@@ -79,6 +87,36 @@ function buildProxy(env) {
             }
           } catch {
             /* ignore malformed path */
+          }
+        })
+      },
+    },
+    '/api/qweather': {
+      target: qweatherTarget,
+      changeOrigin: true,
+      // 无 Key 时短路，避免上游 403 难排查
+      bypass(req, res) {
+        if (!qweatherKey) {
+          res.statusCode = 500
+          res.setHeader('content-type', 'application/json; charset=utf-8')
+          res.end(JSON.stringify({ status: 'error', info: 'QWEATHER_KEY missing' }))
+          return true
+        }
+      },
+      rewrite: (path) => path.replace(/^\/api\/qweather/, ''),
+      configure: (proxy) => {
+        proxy.on('proxyReq', (proxyReq, req) => {
+          try {
+            const url = new URL(req.url || '', 'http://local')
+            if (!url.searchParams.get('key')) {
+              url.searchParams.set('key', qweatherKey)
+            }
+            if (!url.searchParams.get('lang')) {
+              url.searchParams.set('lang', 'zh')
+            }
+            proxyReq.path = url.pathname + url.search
+          } catch {
+            /* ignore */
           }
         })
       },
