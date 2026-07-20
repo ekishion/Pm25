@@ -102,7 +102,7 @@ Enable at least:
    | `CAIYUN_TOKEN` | optional fallback |
    | `WAQI_TOKEN` | optional (`demo`) |
 
-3. Deploy. Routes under `/api/amap/*`, `/api/qweather/*`, `/api/caiyun/*`, `/api/waqi/*` are handled by Edge functions.
+3. Deploy. All `/api/*` traffic is handled by a single Edge function: [`api/[...path].js`](api/[...path].js).
 
 ### Cloudflare Pages
 
@@ -166,8 +166,10 @@ matchesPerHour ≈ concentration × 0.5 ÷ 8
 
 ```text
 .
-├── api/                     # Vercel Edge: /api/amap|caiyun|waqi/*
-├── functions/api/           # Cloudflare Pages Functions
+├── api/
+│   └── [...path].js         # Vercel Edge catch-all /api/*
+├── functions/api/
+│   └── [[path]].js          # Cloudflare Pages catch-all /api/*
 ├── server/
 │   └── proxy.mjs            # shared secret injection + upstream fetch
 ├── deploy/

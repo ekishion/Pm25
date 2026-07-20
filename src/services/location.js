@@ -217,6 +217,47 @@ function mergeHints(hints) {
   return best
 }
 
+/** 主要城市中心（地理编码失败时的最后兜底，非精确定位） */
+const CITY_CENTROIDS = {
+  北京: [39.9042, 116.4074],
+  上海: [31.2304, 121.4737],
+  广州: [23.1291, 113.2644],
+  深圳: [22.5431, 114.0579],
+  杭州: [30.2741, 120.1551],
+  成都: [30.5728, 104.0668],
+  重庆: [29.563, 106.5516],
+  武汉: [30.5928, 114.3055],
+  南京: [32.0603, 118.7969],
+  天津: [39.3434, 117.3616],
+  苏州: [31.2989, 120.5853],
+  西安: [34.3416, 108.9398],
+  厦门: [24.4798, 118.0894],
+  青岛: [36.0671, 120.3826],
+  长沙: [28.2282, 112.9388],
+  郑州: [34.7466, 113.6254],
+  沈阳: [41.8057, 123.4315],
+  大连: [38.914, 121.6147],
+  昆明: [25.0389, 102.7183],
+  合肥: [31.8206, 117.2272],
+  福州: [26.0745, 119.2965],
+  济南: [36.6512, 117.1201],
+  哈尔滨: [45.8038, 126.534],
+  香港: [22.3193, 114.1694],
+  澳门: [22.1987, 113.5439],
+  台北: [25.033, 121.5654],
+  Beijing: [39.9042, 116.4074],
+  Shanghai: [31.2304, 121.4737],
+  Suzhou: [31.2989, 120.5853],
+}
+
+function centroidForCity(city) {
+  if (!city) return null
+  const key = cleanCityName(city)
+  const pair = CITY_CENTROIDS[key] || CITY_CENTROIDS[city]
+  if (!pair) return null
+  return { lat: pair[0], lon: pair[1] }
+}
+
 async function ensureCoords(loc) {
   // 国内城市名来自 ipip 但无坐标时，必须地理编码，禁止沿用 ipwho 北京点
   const forceGeo = Boolean(loc.needsGeocode) || !hasCoords(loc)
@@ -238,6 +279,20 @@ async function ensureCoords(loc) {
     } catch {
       /* fall through */
     }
+
+    // 高德挂了：用城市中心表兜底（保证空气接口仍能请求）
+    const c = centroidForCity(loc.city)
+    if (c) {
+      return buildLoc({
+        source: `${loc.source || 'city'}+centroid`,
+        city: loc.city,
+        province: loc.province,
+        adcode: loc.adcode,
+        lat: c.lat,
+        lon: c.lon,
+        ip: loc.ip,
+      })
+    }
   }
 
   // 无城市名时：IPv4 → 高德 IP 矩形
@@ -250,6 +305,7 @@ async function ensureCoords(loc) {
     }
   }
 
+  // 最后：若仍有任意有效坐标则用（可能来自 ipwho）
   if (usable(loc)) return loc
   throw new Error('no coords')
 }
