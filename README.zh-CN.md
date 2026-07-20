@@ -55,10 +55,27 @@ npm run dev
 > **密钥不要使用 `VITE_` 前缀。**  
 > `VITE_*` 会被内联进前端 JS。
 
-带密钥的服务一律走同源 `/api/*`。开发 / 预览由 Vite 注入密钥。  
-生产请在网关配置相同反代 — 见 [`deploy/nginx.example.conf`](deploy/nginx.example.conf)。
+带密钥的服务一律走同源 `/api/*`。密钥只在边缘 / 代理运行时读取，不进浏览器包。
 
-无密钥 / 无代理时，空气回退到 **Open-Meteo**（公开源）。
+| 环境 | 密钥如何注入 |
+|------|----------------|
+| **本地**（`npm run dev`） | Vite 代理读 `.env` |
+| **Vercel** | 项目环境变量 → [`api/`](api/) Edge 函数 |
+| **Cloudflare Pages** | 项目环境变量 → [`functions/api/`](functions/api/) |
+| **Nginx** | 网关重写 — [`deploy/nginx.example.conf`](deploy/nginx.example.conf) |
+
+共用代理逻辑：[`server/proxy.mjs`](server/proxy.mjs)。  
+无密钥时，空气回退到 **Open-Meteo**（公开源）。
+
+### API 防盗用（CSRF / 简单跨站）
+
+Vercel / Cloudflare 上的 `/api/*` 要求：
+
+1. 请求头 `X-Match-Client: 1`（前端 `fetchJson` 自动带上）
+2. 若有 `Origin` / `Referer`，必须与当前站点同源
+
+跨站简单请求带不上自定义头；预检也不会放行。  
+这是防 CSRF / 随手盗刷，**不能替代**限流或密钥轮换。
 
 ### 高德控制台
 
@@ -67,6 +84,30 @@ npm run dev
 1. **IP 定位**
 2. **地理编码**（城市名 → 坐标，缺坐标时用）
 3. **天气查询**（可选，影响烟雾气质）
+
+## 部署
+
+### Vercel
+
+1. 导入 Git 仓库（Framework: Vite）。
+2. **Settings → Environment Variables**（Production + Preview）写入：
+
+   | 变量 | 是否必需 |
+   |------|----------|
+   | `AMAP_KEY` | 建议 |
+   | `CAIYUN_TOKEN` | 建议 |
+   | `WAQI_TOKEN` | 可选（默认 `demo`） |
+
+3. 部署。`/api/amap/*`、`/api/caiyun/*`、`/api/waqi/*` 由 Edge 函数处理。
+
+### Cloudflare Pages
+
+1. 连接仓库。Build：`npm run build`，Output：`dist`。
+2. **Settings → Environment variables**（Production + Preview）：同上三个变量名。
+3. 函数目录：[`functions/api/`](functions/api/)。  
+   [`public/_routes.json`](public/_routes.json) 将 `/api/*` 交给 Functions。
+
+可选：[`wrangler.toml`](wrangler.toml)。
 
 ## 原理
 
@@ -121,24 +162,31 @@ npm run dev
 
 ```text
 .
+├── api/                     # Vercel Edge：/api/amap|caiyun|waqi/*
+├── functions/api/           # Cloudflare Pages Functions
+├── server/
+│   └── proxy.mjs            # 共用：注入密钥 + 转发上游
 ├── deploy/
-│   └── nginx.example.conf   # 生产反代 + 404
+│   └── nginx.example.conf
 ├── public/
-│   ├── 404.html             # 阴燃火柴 404
+│   ├── 404.html
+│   ├── _routes.json         # CF：仅 /api/* 走 Functions
 │   ├── icon.svg
 │   ├── manifest.webmanifest
-│   └── sw.js                # 离线壳
+│   └── sw.js
 ├── src/
-│   ├── components/          # MatchScene、ShareSheet
+│   ├── components/
 │   ├── i18n/
-│   ├── services/            # location、air、weather、audio、http
+│   ├── services/
 │   ├── styles/
-│   ├── utils/               # aqi、city、fireMode、drawFire、shareCard…
+│   ├── utils/
 │   ├── App.vue
 │   └── main.js
 ├── .env.example
-├── README.md                # English
-├── README.zh-CN.md          # 中文
+├── vercel.json
+├── wrangler.toml
+├── README.md
+├── README.zh-CN.md
 ├── index.html
 ├── package.json
 └── vite.config.js

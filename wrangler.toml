@@ -1,0 +1,10 @@
+# Cloudflare Pages（可选本地 / CLI 配置）
+# 仪表盘绑定环境变量更常见：AMAP_KEY / CAIYUN_TOKEN / WAQI_TOKEN
+#
+# 部署：连接 Git 后 Framework preset = Vite，
+# Build command = npm run build，Output = dist
+# Functions 目录默认 functions/
+
+name = "pm25-match"
+compatibility_date = "2024-11-01"
+pages_build_output_dir = "dist"

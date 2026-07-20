@@ -59,6 +59,7 @@ let hintTimer = 0
 let guideTimer = 0
 let dayTimer = 0
 let loadPromise = null
+let loadSeq = 0
 let lastLoadAt = 0
 const LOAD_COOLDOWN_MS = 12 * 1000
 
@@ -181,7 +182,7 @@ function rememberHistory() {
 async function loadData(options = {}) {
   const force = Boolean(options.force)
 
-  // 强制刷新允许打断「只等旧 promise」的僵局
+  // 非强制：复用进行中的请求
   if (loadPromise && !force) return loadPromise
 
   if (!force && lastLoadAt && Date.now() - lastLoadAt < LOAD_COOLDOWN_MS && (air.value || location.value)) {
@@ -190,6 +191,7 @@ async function loadData(options = {}) {
     return
   }
 
+  const seq = ++loadSeq
   loading.value = true
   if (force) error.value = ''
 
@@ -197,6 +199,7 @@ async function loadData(options = {}) {
     try {
       offline.value = typeof navigator !== 'undefined' && navigator.onLine === false
       const loc = await detectLocation({ force })
+      if (seq !== loadSeq) return
       location.value = {
         city: loc.city,
         province: loc.province,
@@ -223,6 +226,7 @@ async function loadData(options = {}) {
 
       const aq = await fetchAirQuality({ lat: loc.lat, lon: loc.lon, force })
       const wx = await wxP
+      if (seq !== loadSeq) return
 
       if (aq?.aqi == null && aq?.pm25 == null) {
         throw new Error('air empty')
@@ -241,13 +245,17 @@ async function loadData(options = {}) {
       })
       if (options.fromUser) flashHint(t('refreshed'))
     } catch (e) {
+      if (seq !== loadSeq) return
       // 强刷失败时清掉过期读数，避免一直显示假 0
       if (force) air.value = null
       error.value = sanitizeError(e, 'fail')
       probe.note('load-fail', error.value)
     } finally {
-      loading.value = false
-      if (loadPromise === run) loadPromise = null
+      // 仅最新一次负责收尾 loading
+      if (seq === loadSeq) {
+        loading.value = false
+        loadPromise = null
+      }
     }
   })()
 

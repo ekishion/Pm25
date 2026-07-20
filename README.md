@@ -55,10 +55,27 @@ Copy [`.env.example`](.env.example) → `.env`.
 > **Do not use a `VITE_` prefix for secrets.**  
 > `VITE_*` is inlined into client JS.
 
-The app calls same-origin `/api/*` for keyed providers. Vite injects keys in **dev / preview**.  
-Production: reverse-proxy the same routes — see [`deploy/nginx.example.conf`](deploy/nginx.example.conf).
+The app calls same-origin `/api/*` for keyed providers. Secrets are injected only at the edge / proxy.
 
-Without keys/proxy, air falls back to **Open-Meteo** (public).
+| Environment | How secrets are read |
+|-------------|----------------------|
+| **Local** (`npm run dev`) | Vite proxy from `.env` |
+| **Vercel** | Project env → Edge functions in [`api/`](api/) |
+| **Cloudflare Pages** | Project env → Functions in [`functions/api/`](functions/api/) |
+| **Nginx** | Gateway rewrite — [`deploy/nginx.example.conf`](deploy/nginx.example.conf) |
+
+Shared proxy logic: [`server/proxy.mjs`](server/proxy.mjs).  
+Without keys, air falls back to **Open-Meteo** (public).
+
+### API abuse protection
+
+Keyed `/api/*` routes on Vercel / Cloudflare require:
+
+1. Header `X-Match-Client: 1` (set by the app’s `fetchJson`)
+2. If `Origin` / `Referer` is present, it must match the site origin
+
+Cross-site simple requests cannot set the custom header; preflight is not allowed.  
+This is CSRF / casual scrape protection — not a substitute for rate limits or key rotation.
 
 ### Amap console
 
@@ -67,6 +84,30 @@ Enable at least:
 1. **IP location**
 2. **Geocoding** (city → coords when needed)
 3. **Weather** (optional; smoke mood)
+
+## Deploy
+
+### Vercel
+
+1. Import the Git repo (Framework: Vite).
+2. **Settings → Environment Variables** (Production + Preview):
+
+   | Name | Required |
+   |------|----------|
+   | `AMAP_KEY` | recommended |
+   | `CAIYUN_TOKEN` | recommended |
+   | `WAQI_TOKEN` | optional (`demo`) |
+
+3. Deploy. Routes under `/api/amap/*`, `/api/caiyun/*`, `/api/waqi/*` are handled by Edge functions.
+
+### Cloudflare Pages
+
+1. Connect the repo. Build: `npm run build`, output: `dist`.
+2. **Settings → Environment variables** (Production + Preview): same three names as above.
+3. Functions live in [`functions/api/`](functions/api/).  
+   [`public/_routes.json`](public/_routes.json) routes `/api/*` to Functions.
+
+Optional local config: [`wrangler.toml`](wrangler.toml).
 
 ## How it works
 
@@ -121,24 +162,31 @@ matchesPerHour ≈ concentration × 0.5 ÷ 8
 
 ```text
 .
+├── api/                     # Vercel Edge: /api/amap|caiyun|waqi/*
+├── functions/api/           # Cloudflare Pages Functions
+├── server/
+│   └── proxy.mjs            # shared secret injection + upstream fetch
 ├── deploy/
 │   └── nginx.example.conf
 ├── public/
 │   ├── 404.html
+│   ├── _routes.json         # CF: only /api/* → Functions
 │   ├── icon.svg
 │   ├── manifest.webmanifest
 │   └── sw.js
 ├── src/
-│   ├── components/          # MatchScene, ShareSheet
+│   ├── components/
 │   ├── i18n/
-│   ├── services/            # location, air, weather, audio, http
+│   ├── services/
 │   ├── styles/
-│   ├── utils/               # aqi, city, fireMode, drawFire, shareCard, …
+│   ├── utils/
 │   ├── App.vue
 │   └── main.js
 ├── .env.example
-├── README.md                # English
-├── README.zh-CN.md          # 中文
+├── vercel.json
+├── wrangler.toml
+├── README.md
+├── README.zh-CN.md
 ├── index.html
 ├── package.json
 └── vite.config.js

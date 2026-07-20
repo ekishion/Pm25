@@ -1,10 +1,63 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { CLIENT_HEADER, CLIENT_HEADER_VALUE } from './server/proxy.mjs'
 
 /**
  * 密钥只存在于 Node 进程（非 VITE_ 前缀），不会打进浏览器包。
  * 前端一律请求同源 /api/*，由代理注入 key/token。
+ * 与线上一致：必须带 X-Match-Client，且 Origin/Referer 同源。
  */
+
+function isTrustedApiRequest(req) {
+  const marker = req.headers[CLIENT_HEADER] || req.headers['x-match-client']
+  if (String(marker) !== CLIENT_HEADER_VALUE) return false
+
+  const host = req.headers['x-forwarded-host'] || req.headers.host || ''
+  const proto = req.headers['x-forwarded-proto'] || 'http'
+  const selfOrigin = `${proto}://${String(host).split(',')[0].trim()}`
+
+  const origin = req.headers.origin
+  if (origin && origin !== selfOrigin) return false
+
+  const referer = req.headers.referer
+  if (referer) {
+    try {
+      if (new URL(referer).origin !== selfOrigin) return false
+    } catch {
+      return false
+    }
+  }
+  return true
+}
+
+function apiGuardPlugin() {
+  const guard = (req, res, next) => {
+    if (!req.url?.startsWith('/api/')) return next()
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 403
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ status: 'error', info: 'forbidden' }))
+      return
+    }
+    if (!isTrustedApiRequest(req)) {
+      res.statusCode = 403
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ status: 'error', info: 'forbidden' }))
+      return
+    }
+    next()
+  }
+  return {
+    name: 'match-api-csrf-guard',
+    configureServer(server) {
+      server.middlewares.use(guard)
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(guard)
+    },
+  }
+}
+
 function buildProxy(env) {
   const amapKey = env.AMAP_KEY || ''
   const caiyunToken = env.CAIYUN_TOKEN || ''
@@ -35,7 +88,6 @@ function buildProxy(env) {
       changeOrigin: true,
       rewrite: (path) => {
         const rest = path.replace(/^\/api\/caiyun/, '')
-        // 无 token 时不拼假 token，交给上游失败
         if (!caiyunToken) return `/v2.5/invalid${rest}`
         return `/v2.5/${caiyunToken}${rest}`
       },
@@ -62,17 +114,15 @@ function buildProxy(env) {
 }
 
 export default defineConfig(({ mode }) => {
-  // 第三个参数 '' = 加载全部 env，含非 VITE_ 密钥
   const env = loadEnv(mode, process.cwd(), '')
   const proxy = buildProxy(env)
 
   return {
-    plugins: [vue()],
-    // 不把任何服务端密钥以 define 形式注入客户端
+    plugins: [vue(), apiGuardPlugin()],
     envPrefix: ['VITE_'],
     test: {
       environment: 'node',
-      include: ['src/**/*.test.js'],
+      include: ['src/**/*.test.js', 'server/**/*.test.js'],
     },
     build: {
       sourcemap: false,
@@ -83,7 +133,6 @@ export default defineConfig(({ mode }) => {
       target: 'es2020',
       rollupOptions: {
         output: {
-          // 避免可读的源文件路径片段
           entryFileNames: 'assets/[hash].js',
           chunkFileNames: 'assets/[hash].js',
           assetFileNames: 'assets/[hash][extname]',
@@ -91,7 +140,6 @@ export default defineConfig(({ mode }) => {
       },
     },
     esbuild: {
-      // 生产去掉 console / debugger，减少信息面
       drop: mode === 'production' ? ['console', 'debugger'] : [],
       legalComments: 'none',
     },
