@@ -30,24 +30,47 @@ export function approxCnAqiFromUs(usAqi) {
 export const MATCH_PM25_PER_M3 = 8
 export const BREATH_M3_PER_HOUR = 0.5
 
+/** 低于此浓度视为「空气极净」：视觉上几乎不燃 */
+export const CLEAN_PM25 = 2
+
+/**
+ * 选用于换算的浓度。
+ * 部分源会给 pm25=0 但 aqi 仍有读数；此时 0 不可信，回退 aqi。
+ */
+export function pickConcentration({ pm25, aqi } = {}) {
+  const p = Number(pm25)
+  const a = Number(aqi)
+  const hasP = Number.isFinite(p) && p >= 0
+  const hasA = Number.isFinite(a) && a >= 0
+
+  if (hasP && hasA) {
+    // pm25 明确为 0、但 AQI 显示仍有污染 → 信 AQI
+    if (p <= 0 && a > CLEAN_PM25) return a
+    // 两者都有时优先 PM2.5（更贴合火柴换算）
+    return p
+  }
+  if (hasP) return p
+  if (hasA) return a
+  return 0
+}
+
 export function calcMatchEquivalents({ pm25, aqi }) {
-  const concentration =
-    Number.isFinite(Number(pm25)) && Number(pm25) >= 0
-      ? Number(pm25)
-      : Number.isFinite(Number(aqi)) && Number(aqi) >= 0
-        ? Number(aqi)
-        : 0
+  const concentration = pickConcentration({ pm25, aqi })
 
   const matchesPerHour = (concentration * BREATH_M3_PER_HOUR) / MATCH_PM25_PER_M3
   const matchesPerDay = matchesPerHour * 24
   const displayMatches = Math.max(0, Math.round(matchesPerHour * 10) / 10)
-  const burnIntensity = Math.min(1, concentration / 150)
+  // 极净空气：强度压到 0，避免 0 根/时还在旺烧
+  const burnIntensity =
+    concentration <= CLEAN_PM25 ? 0 : Math.min(1, Math.max(0.04, concentration / 150))
+  const isClean = concentration <= CLEAN_PM25 || displayMatches <= 0
 
   return {
     concentration,
     matchesPerHour: displayMatches,
     matchesPerDay: Math.round(matchesPerDay * 10) / 10,
     burnIntensity,
+    isClean,
   }
 }
 
@@ -58,4 +81,11 @@ export function formatNumber(n, digits = 0) {
     maximumFractionDigits: digits,
     minimumFractionDigits: digits,
   })
+}
+
+/** 火柴计数展示：整数不带小数，否则一位小数 */
+export function formatMatchCount(n) {
+  if (!Number.isFinite(Number(n))) return '–'
+  const v = Number(n)
+  return Number.isInteger(v) ? String(v) : (Math.round(v * 10) / 10).toFixed(1)
 }

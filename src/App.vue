@@ -5,22 +5,21 @@ import ShareSheet from './components/ShareSheet.vue'
 import { detectLocation } from './services/location'
 import { fetchAirQuality } from './services/airQuality'
 import { fetchWeather, weatherToStyle } from './services/weather'
-import { calcMatchEquivalents } from './utils/aqi'
+import { calcMatchEquivalents, formatMatchCount } from './utils/aqi'
 import { animateNumber, sleep } from './utils/animate'
 import { daypartStyle } from './utils/daypart'
 import { compareAndStore } from './utils/history'
 import { formatUpdatedLine } from './utils/time'
 import { createDevProbe } from './utils/debug'
 import { sanitizeError } from './utils/safe'
+import { localizeCity } from './utils/city'
+import { resolveFireMode } from './utils/fireMode'
 import { getLocale, initI18n, onLocaleChange, setLocale, t } from './i18n'
 import {
   loadSoundPreference,
   setSoundEnabled,
   unlockAudio,
   playStrike,
-  startCrackle,
-  setCrackleIntensity,
-  stopCrackle,
   disposeAudio,
 } from './services/audio'
 
@@ -70,13 +69,12 @@ const matchInfo = computed(() =>
   }),
 )
 
-const mode = computed(() => {
-  const n = matchInfo.value.matchesPerHour
-  const aqi = air.value?.aqi ?? matchInfo.value.concentration
-  if (aqi >= 150 || n >= 8) return 'bonfire'
-  if (aqi >= 75 || n >= 3) return 'cluster'
-  return 'match'
-})
+const mode = computed(() =>
+  resolveFireMode({
+    matchesPerHour: matchInfo.value.matchesPerHour,
+    aqi: air.value?.aqi ?? matchInfo.value.concentration,
+  }),
+)
 
 const wxStyle = computed(() => weatherToStyle(weather.value || {}))
 
@@ -89,18 +87,13 @@ const displayCount = computed(() => {
   void localeTick.value
   if (error.value && stage.value === 'failed') return '–'
   if (!countReady.value && !showReadout.value) return '0'
-  const n = animatedCount.value
-  if (!Number.isFinite(n)) return '–'
-  const target = matchInfo.value.matchesPerHour
-  if (Number.isInteger(target)) return String(Math.round(n))
-  return (Math.round(n * 10) / 10).toFixed(1)
+  return formatMatchCount(animatedCount.value)
 })
 
 const place = computed(() => {
+  void localeTick.value
   if (loading.value && !location.value) return ''
-  const city = location.value?.city
-  if (!city) return ''
-  return city.replace(/市$/, '')
+  return localizeCity(location.value?.city, getLocale())
 })
 
 const subtitle = computed(() => {
@@ -186,9 +179,11 @@ function rememberHistory() {
 }
 
 async function loadData(options = {}) {
-  if (loadPromise) return loadPromise
-
   const force = Boolean(options.force)
+
+  // 强制刷新允许打断「只等旧 promise」的僵局
+  if (loadPromise && !force) return loadPromise
+
   if (!force && lastLoadAt && Date.now() - lastLoadAt < LOAD_COOLDOWN_MS && (air.value || location.value)) {
     loading.value = false
     if (options.fromUser) flashHint(t('waitCooldown'))
@@ -198,51 +193,75 @@ async function loadData(options = {}) {
   loading.value = true
   if (force) error.value = ''
 
-  loadPromise = (async () => {
+  const run = (async () => {
     try {
       offline.value = typeof navigator !== 'undefined' && navigator.onLine === false
       const loc = await detectLocation({ force })
       location.value = {
         city: loc.city,
         province: loc.province,
+        adcode: loc.adcode || '',
         lat: loc.lat,
         lon: loc.lon,
         source: loc.source,
       }
-      if (!Number.isFinite(loc.lat) || !Number.isFinite(loc.lon)) {
+      if (
+        !Number.isFinite(loc.lat) ||
+        !Number.isFinite(loc.lon) ||
+        (Math.abs(loc.lat) < 1e-6 && Math.abs(loc.lon) < 1e-6)
+      ) {
         throw new Error('coords')
       }
 
-      const [aq, wx] = await Promise.all([
-        fetchAirQuality({ lat: loc.lat, lon: loc.lon, force }),
-        fetchWeather({ lat: loc.lat, lon: loc.lon, force }),
-      ])
+      // 天气失败不挡空气；空气失败才算整体失败
+      const wxP = fetchWeather({
+        lat: loc.lat,
+        lon: loc.lon,
+        adcode: loc.adcode || '',
+        force,
+      }).catch(() => ({ wind: 0, humidity: 50, source: '' }))
+
+      const aq = await fetchAirQuality({ lat: loc.lat, lon: loc.lon, force })
+      const wx = await wxP
+
+      if (aq?.aqi == null && aq?.pm25 == null) {
+        throw new Error('air empty')
+      }
+
       air.value = aq
       weather.value = wx
       lastLoadAt = Date.now()
       error.value = ''
-      probe.note('loaded', { source: aq.source, city: loc.city })
+      probe.note('loaded', {
+        source: aq.source,
+        weather: wx.source,
+        city: loc.city,
+        aqi: aq.aqi,
+        pm25: aq.pm25,
+      })
       if (options.fromUser) flashHint(t('refreshed'))
     } catch (e) {
+      // 强刷失败时清掉过期读数，避免一直显示假 0
+      if (force) air.value = null
       error.value = sanitizeError(e, 'fail')
       probe.note('load-fail', error.value)
     } finally {
       loading.value = false
-      loadPromise = null
+      if (loadPromise === run) loadPromise = null
     }
   })()
 
-  return loadPromise
+  loadPromise = run
+  return run
 }
 
 async function softRefresh() {
-  if (loading.value) return
-  if (lastLoadAt && Date.now() - lastLoadAt < LOAD_COOLDOWN_MS) {
+  if (lastLoadAt && Date.now() - lastLoadAt < LOAD_COOLDOWN_MS && !error.value) {
     flashHint(t('waitCooldown'))
     return
   }
   await loadData({ force: true, fromUser: true })
-  if (stage.value === 'burning' && !error.value) {
+  if (stage.value === 'burning' && !error.value && air.value) {
     startCountUp(matchInfo.value.matchesPerHour)
     rememberHistory()
   }
@@ -251,11 +270,6 @@ async function softRefresh() {
 async function toggleSound() {
   await unlockAudio()
   soundOn.value = setSoundEnabled(!soundOn.value)
-  if (soundOn.value && stage.value === 'burning') {
-    startCrackle(matchInfo.value.burnIntensity)
-  } else {
-    stopCrackle()
-  }
 }
 
 function toggleLang() {
@@ -286,16 +300,11 @@ async function ignite() {
     await sleep(80)
   }
 
-  stage.value = 'striking'
-  firePhase.value = 'striking'
-  flash.value = true
-  window.setTimeout(() => {
-    flash.value = false
-  }, 180)
-  await playStrike()
-  await sleep(720)
-
   if (error.value || (!air.value && !loading.value)) {
+    stage.value = 'striking'
+    firePhase.value = 'striking'
+    await playStrike()
+    await sleep(520)
     firePhase.value = 'failed'
     stage.value = 'failed'
     showReadout.value = true
@@ -307,6 +316,42 @@ async function ignite() {
     igniting.value = false
     return
   }
+
+  const clean = matchInfo.value.isClean
+
+  if (clean) {
+    // 极净：轻触即止，不闪全屏、不旺烧再熄
+    stage.value = 'striking'
+    firePhase.value = 'striking'
+    await playStrike()
+    await sleep(380)
+    firePhase.value = 'lit'
+    stage.value = 'burning'
+    grow.value = false
+    showReadout.value = true
+    startCountUp(matchInfo.value.matchesPerHour)
+    rememberHistory()
+    showFoot.value = true
+    window.clearTimeout(footTimer)
+    footTimer = window.setTimeout(() => {
+      showFoot.value = false
+    }, 2800)
+    window.clearTimeout(shareTimer)
+    shareTimer = window.setTimeout(() => {
+      showShareBtn.value = true
+    }, 900)
+    igniting.value = false
+    return
+  }
+
+  stage.value = 'striking'
+  firePhase.value = 'striking'
+  flash.value = true
+  window.setTimeout(() => {
+    flash.value = false
+  }, 180)
+  await playStrike()
+  await sleep(720)
 
   firePhase.value = 'lit'
   stage.value = 'burning'
@@ -330,10 +375,6 @@ async function ignite() {
     showShareBtn.value = true
   }, 1600)
 
-  if (soundOn.value) {
-    await startCrackle(matchInfo.value.burnIntensity || 0.35)
-  }
-
   igniting.value = false
 }
 
@@ -349,13 +390,6 @@ function onKeydown(e) {
     toggleLang()
   }
 }
-
-watch(
-  () => matchInfo.value.burnIntensity,
-  (v) => {
-    if (stage.value === 'burning' && soundOn.value) setCrackleIntensity(v)
-  },
-)
 
 watch(
   () => matchInfo.value.matchesPerHour,
@@ -428,7 +462,6 @@ onUnmounted(() => {
   window.clearTimeout(guideTimer)
   window.clearInterval(dayTimer)
   window.removeEventListener('keydown', onKeydown)
-  stopCrackle()
   disposeAudio()
 })
 </script>
@@ -545,6 +578,10 @@ onUnmounted(() => {
           <template v-else>
             <span v-if="air?.pm25 != null">PM2.5 {{ Math.round(air.pm25) }}</span>
             <span v-else-if="air?.aqi != null">AQI {{ air.aqi }}</span>
+            <span
+              v-if="air?.pm25 != null && air?.aqi != null"
+              class="sep"
+            >AQI {{ air.aqi }}</span>
             <span v-if="subtitle" class="sep">{{ subtitle }}</span>
           </template>
         </div>
@@ -572,6 +609,7 @@ onUnmounted(() => {
   position: relative;
   height: 100%;
   min-height: 100dvh;
+  max-width: 100vw;
   display: grid;
   grid-template-rows: auto 1fr auto;
   padding:
@@ -581,6 +619,7 @@ onUnmounted(() => {
     calc(18px + var(--safe-left));
   background: #fff;
   color: #111;
+  overflow-x: clip;
   opacity: 0;
   transform: translateY(8px);
   transition:
@@ -618,21 +657,26 @@ onUnmounted(() => {
 .top {
   position: relative;
   z-index: 2;
-  display: grid;
-  grid-template-columns: 1fr auto;
+  display: flex;
   align-items: center;
-  column-gap: 16px;
-  height: 48px;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  height: 44px;
+  max-width: 100%;
 }
 
 .place {
+  flex: 0 1 auto;
   min-width: 0;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  font-size: 0.95rem;
+  max-width: min(46vw, 180px);
+  height: 44px;
+  padding: 0 4px 0 0;
+  display: inline-block;
+  width: fit-content;
+  font-size: 0.92rem;
   font-weight: 500;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.02em;
   color: var(--text-soft);
   white-space: nowrap;
   overflow: hidden;
@@ -640,6 +684,7 @@ onUnmounted(() => {
   opacity: 0;
   transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.12s;
   text-align: left;
+  line-height: 44px;
 }
 
 .place.show {
@@ -647,17 +692,19 @@ onUnmounted(() => {
 }
 
 .top-actions {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  height: 48px;
-  gap: 2px;
+  height: 44px;
+  gap: 0;
+  min-width: 0;
 }
 
 .icon-btn {
   box-sizing: border-box;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   margin: 0;
   padding: 0;
   display: inline-flex;
@@ -666,12 +713,21 @@ onUnmounted(() => {
   border-radius: 50%;
   color: var(--text-soft);
   line-height: 0;
+  flex: 0 0 auto;
   opacity: 0;
   pointer-events: none;
+  overflow: hidden;
   transition:
     color 0.2s ease,
     background 0.2s ease,
-    opacity 0.4s ease;
+    opacity 0.35s ease,
+    width 0.25s ease;
+}
+
+.icon-btn:not(.visible) {
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .icon-btn.visible {
@@ -708,13 +764,18 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: clamp(8px, 1.4vh, 18px);
+  min-width: 0;
   min-height: 0;
-  padding: 8px 0 0;
-  transform: translateY(-1.5vh);
+  max-width: 100%;
+  padding: 4px 0 0;
+  overflow: hidden;
 }
 
 .scene-wrap {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
   transform: translateY(6px) scale(0.975);
   opacity: 0.92;
   filter: hue-rotate(calc((var(--flame-hue, 1) - 1) * 18deg))
@@ -912,17 +973,27 @@ onUnmounted(() => {
   .top,
   .place,
   .top-actions {
-    height: 44px;
+    height: 40px;
+  }
+
+  .place {
+    max-width: min(42vw, 140px);
+    line-height: 40px;
+    font-size: 0.88rem;
   }
 
   .icon-btn {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .icon-btn:not(.visible) {
+    width: 0;
   }
 
   .ignite {
     padding: 13px 24px;
-    letter-spacing: 0.32em;
+    letter-spacing: 0.22em;
   }
 }
 

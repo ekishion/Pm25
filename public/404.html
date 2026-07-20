@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="robots" content="noindex" />
+    <title>404 · 火柴</title>
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&family=Noto+Sans+SC:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #ffffff;
+        --text: #111111;
+        --text-soft: #8a8a8a;
+        --text-faint: #b5b5b5;
+        --line: rgba(0, 0, 0, 0.06);
+        --flame: #ff6a1a;
+        --wood: #c4a07a;
+        --wood-deep: #8b6240;
+        --head: #2a1c14;
+        --font: 'Inter', 'Noto Sans SC', system-ui, -apple-system, sans-serif;
+        --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+        --safe-top: env(safe-area-inset-top, 0px);
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        font-family: var(--font);
+        color: var(--text);
+        background: var(--bg);
+        -webkit-font-smoothing: antialiased;
+        display: grid;
+        place-items: center;
+        padding:
+          calc(24px + var(--safe-top))
+          24px
+          calc(28px + var(--safe-bottom));
+      }
+
+      .page {
+        width: min(420px, 100%);
+        text-align: center;
+        opacity: 0;
+        transform: translateY(8px);
+        animation: enter 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.05s forwards;
+      }
+
+      @keyframes enter {
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+
+      .scene {
+        position: relative;
+        height: 220px;
+        margin: 0 auto 8px;
+        display: grid;
+        place-items: end center;
+      }
+
+      .glow {
+        position: absolute;
+        left: 50%;
+        bottom: 18%;
+        width: 120px;
+        height: 80px;
+        transform: translateX(-50%);
+        border-radius: 50%;
+        background: radial-gradient(
+          ellipse at center,
+          rgba(120, 100, 90, 0.08),
+          transparent 70%
+        );
+        filter: blur(10px);
+        pointer-events: none;
+      }
+
+      .floor {
+        position: absolute;
+        left: 50%;
+        bottom: 8%;
+        width: 46%;
+        height: 18px;
+        transform: translateX(-50%);
+        border-radius: 50%;
+        background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.06), transparent 72%);
+        filter: blur(2px);
+      }
+
+      .match {
+        position: relative;
+        width: 36px;
+        height: 180px;
+        margin-bottom: 6%;
+        animation: idle-float 5.5s ease-in-out infinite;
+      }
+
+      .stick {
+        position: absolute;
+        left: 50%;
+        bottom: 0;
+        width: 11px;
+        height: 132px;
+        margin-left: -5.5px;
+        border-radius: 5px;
+        background: linear-gradient(180deg, #e8cda8 0%, var(--wood) 42%, var(--wood-deep) 100%);
+        filter: grayscale(0.15) brightness(0.96);
+      }
+
+      .head {
+        position: absolute;
+        left: 50%;
+        bottom: 124px;
+        width: 18px;
+        height: 21px;
+        margin-left: -9px;
+        border-radius: 50% 50% 46% 46%;
+        background: radial-gradient(circle at 35% 30%, #3a2a20, var(--head) 72%);
+      }
+
+      /* 阴燃：几乎熄灭的火 */
+      .ember {
+        position: absolute;
+        left: 50%;
+        bottom: 136px;
+        width: 22px;
+        height: 28px;
+        margin-left: -11px;
+        opacity: 0.45;
+        filter: grayscale(0.45) brightness(0.85);
+        animation: smolder 3.2s ease-in-out infinite;
+        transform-origin: 50% 100%;
+      }
+
+      .ember-core {
+        position: absolute;
+        left: 50%;
+        bottom: 0;
+        width: 10px;
+        height: 16px;
+        margin-left: -5px;
+        border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%;
+        background: radial-gradient(ellipse at 50% 80%, #ffd27a, rgba(255, 106, 26, 0.35) 70%, transparent 82%);
+      }
+
+      .smoke {
+        position: absolute;
+        left: 50%;
+        bottom: 150px;
+        width: 28px;
+        height: 36px;
+        margin-left: -14px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(140, 140, 140, 0.16), transparent 72%);
+        filter: blur(8px);
+        opacity: 0;
+        animation: smoke 4.2s cubic-bezier(0.22, 0.15, 0.25, 1) infinite;
+      }
+
+      .smoke.s2 {
+        margin-left: -6px;
+        animation-delay: 1.4s;
+        width: 34px;
+        height: 40px;
+      }
+
+      @keyframes idle-float {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-3px);
+        }
+      }
+
+      @keyframes smolder {
+        0%,
+        100% {
+          transform: scale(0.55) translateY(2px);
+          opacity: 0.28;
+        }
+        50% {
+          transform: scale(0.72) translateY(0);
+          opacity: 0.5;
+        }
+      }
+
+      @keyframes smoke {
+        0% {
+          transform: translate3d(0, 8px, 0) scale(0.5);
+          opacity: 0;
+        }
+        18% {
+          opacity: 0.55;
+        }
+        100% {
+          transform: translate3d(10px, -90px, 0) scale(1.4);
+          opacity: 0;
+        }
+      }
+
+      .code {
+        font-family: var(--mono);
+        font-size: clamp(3.2rem, 12vw, 4.6rem);
+        font-weight: 600;
+        letter-spacing: -0.05em;
+        line-height: 0.95;
+        margin: 18px 0 10px;
+        color: #111;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 500;
+        letter-spacing: 0.18em;
+        color: var(--text-soft);
+      }
+
+      .hint {
+        margin: 12px 0 0;
+        font-size: 0.88rem;
+        color: var(--text-faint);
+        letter-spacing: 0.04em;
+      }
+
+      .actions {
+        margin-top: 28px;
+        display: flex;
+        justify-content: center;
+      }
+
+      .home {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 13px 26px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: #111;
+        font: inherit;
+        font-size: 0.95rem;
+        font-weight: 500;
+        letter-spacing: 0.22em;
+        text-decoration: none;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.045);
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      .home:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 16px 44px rgba(0, 0, 0, 0.07);
+      }
+
+      .home:active {
+        transform: scale(0.98);
+      }
+
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--flame);
+        opacity: 0.85;
+      }
+
+      .foot {
+        margin-top: 36px;
+        font-size: 0.78rem;
+        color: #d0d0d0;
+        letter-spacing: 0.08em;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .page,
+        .match,
+        .ember,
+        .smoke {
+          animation: none !important;
+        }
+
+        .page {
+          opacity: 1;
+          transform: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <div class="scene" aria-hidden="true">
+        <div class="glow"></div>
+        <div class="floor"></div>
+        <div class="match">
+          <span class="smoke"></span>
+          <span class="smoke s2"></span>
+          <span class="ember"><span class="ember-core"></span></span>
+          <span class="head"></span>
+          <span class="stick"></span>
+        </div>
+      </div>
+
+      <div class="code">404</div>
+      <h1 class="title" data-i18n-title>熄灭了</h1>
+      <p class="hint" data-i18n-hint>这条路没有空气可读</p>
+
+      <div class="actions">
+        <a class="home" href="/">
+          <span class="dot" aria-hidden="true"></span>
+          <span data-i18n-home>回去</span>
+        </a>
+      </div>
+
+      <p class="foot" data-i18n-foot>火柴 · Match</p>
+    </main>
+
+    <script>
+      ;(function () {
+        try {
+          var lang =
+            (navigator.language || '').toLowerCase().startsWith('zh') ||
+            (localStorage.getItem('pm25-lang') || '') === 'zh'
+              ? 'zh'
+              : 'en'
+          // 与主站一致：有本地偏好用本地，否则跟浏览器
+          var stored = localStorage.getItem('pm25-lang')
+          if (stored === 'zh' || stored === 'en') lang = stored
+          else lang = (navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en'
+
+          if (lang === 'en') {
+            document.documentElement.lang = 'en'
+            document.title = '404 · Match'
+            document.querySelector('[data-i18n-title]').textContent = 'gone out'
+            document.querySelector('[data-i18n-hint]').textContent = 'nothing to burn on this path'
+            document.querySelector('[data-i18n-home]').textContent = 'home'
+            document.querySelector('[data-i18n-foot]').textContent = 'Match'
+          }
+        } catch (_) {
+          /* ignore */
+        }
+      })()
+    </script>
+  </body>
+</html>

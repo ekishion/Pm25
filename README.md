@@ -1,35 +1,37 @@
-# 火柴 · Match
+# Match · 火柴
 
-> 此刻空气，相当于多少根火柴在燃烧。
+> This air is roughly how many matches burning.
 
-极简空气可视化：白底中央一根火柴。污染升高时变成一簇，再高则成火堆。
+Minimal air visualization: one match on white. Dirtier air becomes a cluster, then a bonfire.
 
 <p align="center">
   <img src="public/icon.svg" alt="Match" width="96" />
 </p>
 
+**Language:** English · [中文](README.zh-CN.md)
+
 ## Features
 
-- **点燃仪式** — 擦燃动效 + 短音效，数字 count-up，形态分步生长  
-- **污染形态** — 单根 / 一簇 / 火堆，烟雾气质随浓度变化  
-- **失败态** — 读不到空气时阴燃，不展示技术错误  
-- **时间与历史** — 「更新于…」、同城 24h 对比上次  
-- **日夜与天气气质** — 只影响光感与烟火，不做仪表盘  
-- **分享卡片** — 竖版 / 方形预览，可隐藏城市  
-- **中 / 英** — 顶栏切换，或 `Ctrl/⌘ + L`  
-- **PWA** — 可添加到主屏幕，离线壳  
-- **请求节流** — 缓存、冷却、并发去重  
-- **密钥不进前端** — 仅 Node / 网关注入  
+- **Ignite ritual** — strike motion + short SFX, count-up, staged growth
+- **Pollution forms** — single / cluster / bonfire; near-clean air barely burns
+- **Failure state** — smolders when air is unavailable (no tech error dump)
+- **Time & history** — “updated …”, same-city 24h delta
+- **Daypart & weather mood** — light/smoke only, not a dashboard
+- **Share card** — portrait / square, optional city hide; Canvas reuses fire drawing
+- **中 / EN** — header toggle, or `Ctrl/⌘ + L`
+- **PWA** — installable shell + custom 404
+- **Request guard** — cache, cooldown, dedupe, multi-source race
+- **Secrets stay server-side** — Node / gateway inject only
 
 ## Quick start
 
 ```bash
 npm install
-cp .env.example .env   # optional
+cp .env.example .env   # optional but recommended
 npm run dev
 ```
 
-Open the local URL printed by Vite (default `http://localhost:5173`).
+Open the URL Vite prints (default `http://localhost:5173`).
 
 ### Scripts
 
@@ -46,38 +48,73 @@ Copy [`.env.example`](.env.example) → `.env`.
 
 | Variable | Purpose | In browser bundle? |
 |----------|---------|--------------------|
-| `AMAP_KEY` | Amap IP geolocation | **No** |
+| `AMAP_KEY` | Amap IP + geocode + weather | **No** |
 | `CAIYUN_TOKEN` | Caiyun realtime AQI | **No** |
 | `WAQI_TOKEN` | WAQI fallback (default `demo`) | **No** |
 
 > **Do not use a `VITE_` prefix for secrets.**  
-> `VITE_*` is inlined into client JS. Keys must stay server-side.
+> `VITE_*` is inlined into client JS.
 
-The app only calls same-origin `/api/*`. Vite injects keys in **dev / preview**.  
-For production, put the same reverse proxy on your gateway — see [`deploy/nginx.example.conf`](deploy/nginx.example.conf).
+The app calls same-origin `/api/*` for keyed providers. Vite injects keys in **dev / preview**.  
+Production: reverse-proxy the same routes — see [`deploy/nginx.example.conf`](deploy/nginx.example.conf).
 
-Without a proxy, the app falls back to **Open-Meteo** (public, no key).
+Without keys/proxy, air falls back to **Open-Meteo** (public).
+
+### Amap console
+
+Enable at least:
+
+1. **IP location**
+2. **Geocoding** (city → coords when needed)
+3. **Weather** (optional; smoke mood)
 
 ## How it works
 
 ```
-IP / geo → city + lat/lon
-        → AQI / PM2.5
-        → matches/hour ≈ PM2.5 × 0.5 ÷ 8
-        → match · cluster · bonfire
+public IP → city (approx)
+         → geocode / Amap IP rectangle → coarse lat/lon
+         → AQI / PM2.5 (Caiyun → WAQI → Open-Meteo, race)
+         → matches/hour ≈ concentration × 0.5 ÷ 8
+         → clean · match · cluster · bonfire
 ```
 
-This conversion is **illustrative**, not a lab emission factor.
+### Location
+
+- **City-level only** — no browser geolocation prompt
+- Prefers domestic IP clues (overseas libs often mislabel CN IPv6 as Beijing)
+- Never treats missing coords as `0,0` (Null Island)
+- CORS-blocked browser sources are not used
+
+### Air quality
+
+- Parallel race; first valid reading wins
+- If `pm25=0` but `aqi>2`, zero is treated as missing → use AQI
+- UI can show both PM2.5 and AQI
+
+### Match conversion
+
+Illustrative only — not a lab emission factor:
+
+```
+matchesPerHour ≈ concentration × 0.5 ÷ 8
+```
+
+| Mode | Rough threshold |
+|------|-----------------|
+| clean | concentration ≤ 2 (barely lit) |
+| match | low |
+| cluster | AQI ≥ 75 or matches ≥ 3 |
+| bonfire | AQI ≥ 150 or matches ≥ 8 |
 
 ### Interactions
 
 | Action | Behavior |
 |--------|----------|
-| **Ignite** | Start the ritual |
-| **Click city name** | Soft refresh (cooldown) |
-| **Share** | Card preview sheet |
+| **Ignite** | Start ritual (clean air: soft strike, no full burn) |
+| **Click city** | Soft refresh (cooldown; force-capable) |
+| **Share** | Card sheet |
 | **中 / EN** | Language |
-| `Enter` / `Space` | Ignite (keyboard) |
+| `Enter` / `Space` | Ignite |
 | `Ctrl/⌘ + L` | Toggle language |
 
 ## Project layout
@@ -85,39 +122,61 @@ This conversion is **illustrative**, not a lab emission factor.
 ```text
 .
 ├── deploy/
-│   └── nginx.example.conf   # production proxy sketch
+│   └── nginx.example.conf
 ├── public/
+│   ├── 404.html
 │   ├── icon.svg
 │   ├── manifest.webmanifest
-│   └── sw.js                # minimal offline shell
+│   └── sw.js
 ├── src/
 │   ├── components/          # MatchScene, ShareSheet
 │   ├── i18n/
 │   ├── services/            # location, air, weather, audio, http
 │   ├── styles/
-│   ├── utils/               # aqi, cache guard, share card, …
+│   ├── utils/               # aqi, city, fireMode, drawFire, shareCard, …
 │   ├── App.vue
 │   └── main.js
 ├── .env.example
+├── README.md                # English
+├── README.zh-CN.md          # 中文
 ├── index.html
 ├── package.json
 └── vite.config.js
 ```
 
-## Security notes
+### Shared modules
 
-- Secrets use **non-`VITE_`** env names and never ship in the client bundle  
-- Client errors are sanitized (paths / token-like strings redacted)  
-- Production build: no sourcemaps, hashed assets, `console` stripped  
-- `.env` is gitignored — only commit `.env.example`  
+| Module | Used by |
+|--------|---------|
+| `fireMode.js` | DOM scene + share Canvas layout |
+| `drawFire.js` | Share cards / static fire |
+| `city.js` | City label localization |
+| `aqi.js` | Count, intensity, clean flag |
+
+## Recent updates
+
+- Bonfire visuals (log teepee, not match pile)
+- Share card redesign; fire drawing extracted to `drawFire`
+- City-level IP location; reject `0,0` coords
+- Air multi-source race; bogus `pm25=0` falls back to AQI
+- Clean-air ember + soft ignite
+- Header layout / hit targets / louder strike SFX
+- Custom `404.html` + nginx example
+
+## Security
+
+- Non-`VITE_` secret names only
+- Client errors sanitized
+- Production: no sourcemaps, hashed assets, `console` stripped
+- `.env` gitignored — commit `.env.example` only
 
 ## Stack
 
-- Vue 3 + Vite 6  
-- Web Audio (strike only)  
-- Canvas share cards  
-- Vitest  
+- Vue 3 + Vite 6
+- Web Audio (strike only)
+- Canvas share cards
+- Vitest
 
 ## License
 
-MIT — use freely; data belongs to the respective providers (Amap / Caiyun / WAQI / Open-Meteo).
+MIT — data belongs to the respective providers (Amap / Caiyun / WAQI / Open-Meteo / ipwho / ipip).

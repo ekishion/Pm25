@@ -121,36 +121,37 @@ function onBackdrop(e) {
 }
 
 .panel {
-  width: min(420px, 100%);
+  width: min(400px, 100%);
   max-height: min(92dvh, 860px);
   overflow: auto;
-  border-radius: 20px;
+  border-radius: 22px;
   border: 1px solid rgba(0, 0, 0, 0.06);
   background: #fff;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08);
-  padding: 16px 16px 18px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.1);
+  padding: 14px 14px 16px;
 }
 
 .head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+  padding: 0 4px;
 }
 
 .head h2 {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   color: #666;
 }
 
 .x {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  font-size: 1.4rem;
+  font-size: 1.35rem;
   line-height: 1;
   color: #999;
 }
@@ -162,10 +163,12 @@ function onBackdrop(e) {
 
 .preview {
   aspect-ratio: 3 / 4;
-  border-radius: 14px;
+  border-radius: 16px;
   overflow: hidden;
-  background: #fafafa;
-  border: 1px solid rgba(0, 0, 0, 0.04);
+  background: linear-gradient(180deg, #fff 0%, #fff8f2 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.04),
+    0 8px 28px rgba(0, 0, 0, 0.05);
   display: grid;
   place-items: center;
 }
@@ -184,31 +187,31 @@ function onBackdrop(e) {
 .ph {
   color: #bbb;
   font-size: 0.85rem;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
 }
 
 .opts {
   display: grid;
-  gap: 10px;
-  margin: 14px 0;
+  gap: 8px;
+  margin: 12px 0 10px;
 }
 
 .seg {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  padding: 4px;
+  gap: 4px;
+  padding: 3px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.03);
+  background: rgba(0, 0, 0, 0.035);
 }
 
 .seg button,
 .toggle,
 .primary {
-  min-height: 40px;
+  min-height: 42px;
   border-radius: 999px;
   font-size: 0.88rem;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   color: #666;
 }
 
@@ -229,7 +232,6 @@ function onBackdrop(e) {
 
 .primary {
   width: 100%;
-  color: #111;
   font-weight: 600;
   background: #111;
   color: #fff;

@@ -1,115 +1,9 @@
 /**
- * 极简白底分享卡
+ * 分享卡：构图 + 文案；火候绘制复用 drawFire
  */
 
-function roundRect(ctx, x, y, w, h, r) {
-  const radius = Math.min(r, w / 2, h / 2)
-  ctx.beginPath()
-  ctx.moveTo(x + radius, y)
-  ctx.arcTo(x + w, y, x + w, y + h, radius)
-  ctx.arcTo(x + w, y + h, x, y + h, radius)
-  ctx.arcTo(x, y + h, x, y, radius)
-  ctx.arcTo(x, y, x + w, y, radius)
-  ctx.closePath()
-}
-
-function drawMatch(ctx, x, y, opts = {}) {
-  const { scale = 1, rotation = 0, lit = true, flameScale = 1 } = opts
-  ctx.save()
-  ctx.translate(x, y)
-  ctx.rotate((rotation * Math.PI) / 180)
-  ctx.scale(scale, scale)
-
-  const stickW = 9
-  const stickH = 132
-  const grd = ctx.createLinearGradient(0, -stickH, 0, 0)
-  grd.addColorStop(0, '#edd4b0')
-  grd.addColorStop(0.5, '#c4a07a')
-  grd.addColorStop(1, '#8b6240')
-  ctx.fillStyle = grd
-  roundRect(ctx, -stickW / 2, -stickH, stickW, stickH, 3.5)
-  ctx.fill()
-
-  const headY = -stickH + 3
-  const headGrd = ctx.createRadialGradient(-1.5, headY - 3, 1, 0, headY, 8)
-  headGrd.addColorStop(0, '#4a3224')
-  headGrd.addColorStop(1, '#2a1c14')
-  ctx.fillStyle = headGrd
-  ctx.beginPath()
-  ctx.ellipse(0, headY, 7, 8, 0, 0, Math.PI * 2)
-  ctx.fill()
-
-  if (lit) {
-    const fs = flameScale
-    const baseY = headY - 5
-    const glow = ctx.createRadialGradient(0, baseY - 8 * fs, 2, 0, baseY, 28 * fs)
-    glow.addColorStop(0, 'rgba(255, 150, 60, 0.22)')
-    glow.addColorStop(1, 'rgba(255, 150, 60, 0)')
-    ctx.fillStyle = glow
-    ctx.beginPath()
-    ctx.arc(0, baseY - 8 * fs, 28 * fs, 0, Math.PI * 2)
-    ctx.fill()
-
-    const o = ctx.createRadialGradient(0, baseY - 8 * fs, 1, 0, baseY - 2 * fs, 18 * fs)
-    o.addColorStop(0, 'rgba(255, 190, 90, 0.95)')
-    o.addColorStop(0.5, 'rgba(255, 110, 30, 0.8)')
-    o.addColorStop(1, 'rgba(255, 70, 16, 0)')
-    ctx.fillStyle = o
-    ctx.beginPath()
-    ctx.moveTo(0, baseY - 46 * fs)
-    ctx.bezierCurveTo(15 * fs, baseY - 24 * fs, 12 * fs, baseY - 4 * fs, 0, baseY)
-    ctx.bezierCurveTo(-12 * fs, baseY - 4 * fs, -15 * fs, baseY - 24 * fs, 0, baseY - 46 * fs)
-    ctx.fill()
-
-    const m = ctx.createRadialGradient(0, baseY - 6 * fs, 1, 0, baseY, 10 * fs)
-    m.addColorStop(0, '#fff6d8')
-    m.addColorStop(0.55, '#ffd27a')
-    m.addColorStop(1, 'rgba(255, 122, 40, 0)')
-    ctx.fillStyle = m
-    ctx.beginPath()
-    ctx.moveTo(0, baseY - 30 * fs)
-    ctx.bezierCurveTo(8 * fs, baseY - 16 * fs, 7 * fs, baseY - 2 * fs, 0, baseY)
-    ctx.bezierCurveTo(-7 * fs, baseY - 2 * fs, -8 * fs, baseY - 16 * fs, 0, baseY - 30 * fs)
-    ctx.fill()
-  }
-
-  ctx.restore()
-}
-
-function drawSoftSmoke(ctx, cx, cy, mode, intensity) {
-  const count = mode === 'bonfire' ? 5 : mode === 'cluster' ? 3 : 1
-  for (let i = 0; i < count; i += 1) {
-    const t = count === 1 ? 0.5 : i / (count - 1)
-    const x = cx + (t - 0.5) * (mode === 'bonfire' ? 120 : 48)
-    const y = cy - 30 - i * 22
-    const r = 22 + i * 8 + intensity * 8
-    const alpha = (mode === 'bonfire' ? 0.05 : 0.035) + intensity * 0.03
-    const g = ctx.createRadialGradient(x, y, 1, x, y, r)
-    g.addColorStop(0, `rgba(120, 118, 114, ${alpha})`)
-    g.addColorStop(1, 'rgba(120, 118, 114, 0)')
-    ctx.fillStyle = g
-    ctx.beginPath()
-    ctx.arc(x, y, r, 0, Math.PI * 2)
-    ctx.fill()
-  }
-}
-
-function drawFloor(ctx, cx, cy, mode) {
-  const w = mode === 'bonfire' ? 240 : mode === 'cluster' ? 170 : 110
-  const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, w / 2)
-  g.addColorStop(0, mode === 'bonfire' ? 'rgba(255, 120, 40, 0.08)' : 'rgba(0, 0, 0, 0.05)')
-  g.addColorStop(1, 'rgba(0, 0, 0, 0)')
-  ctx.fillStyle = g
-  ctx.beginPath()
-  ctx.ellipse(cx, cy, w / 2, 11, 0, 0, Math.PI * 2)
-  ctx.fill()
-}
-
-function formatCount(n) {
-  if (!Number.isFinite(Number(n))) return '–'
-  const v = Number(n)
-  return Number.isInteger(v) ? String(v) : (Math.round(v * 10) / 10).toFixed(1)
-}
+import { formatMatchCount } from './aqi'
+import { drawFireScene } from './drawFire'
 
 /**
  * @param {object} data
@@ -133,108 +27,102 @@ export async function renderShareCard(data) {
 
   const W = 1080
   const H = ratio === 'square' ? 1080 : 1440
-  const pad = ratio === 'square' ? 80 : 96
+  const isSquare = ratio === 'square'
+  const padX = isSquare ? 72 : 80
+  const padY = isSquare ? 64 : 72
 
   const canvas = document.createElement('canvas')
   canvas.width = W
   canvas.height = H
   const ctx = canvas.getContext('2d')
 
-  ctx.fillStyle = '#ffffff'
+  // 底：微暖白
+  const bg = ctx.createLinearGradient(0, 0, 0, H)
+  bg.addColorStop(0, '#ffffff')
+  bg.addColorStop(0.55, '#fffdfb')
+  bg.addColorStop(1, '#fff8f2')
+  ctx.fillStyle = bg
   ctx.fillRect(0, 0, W, H)
 
+  const cx = W / 2
+
+  // ── 顶部信息带 ──
+  const topY = padY + 8
   ctx.textBaseline = 'middle'
-  ctx.fillStyle = '#9a9a9a'
-  ctx.font = '500 30px Inter, "Noto Sans SC", system-ui, sans-serif'
-  ctx.textAlign = 'left'
-  if (place && !hidePlace) ctx.fillText(place, pad, pad + 8)
+  ctx.font = '500 34px Inter, "Noto Sans SC", system-ui, sans-serif'
+
+  if (place && !hidePlace) {
+    ctx.textAlign = 'left'
+    ctx.fillStyle = '#8a8a8a'
+    ctx.fillText(place, padX, topY)
+  }
 
   ctx.textAlign = 'right'
-  ctx.fillStyle = '#cfcfcf'
-  ctx.font = '500 28px Inter, "Noto Sans SC", system-ui, sans-serif'
-  ctx.fillText(brand, W - pad, pad + 8)
+  ctx.fillStyle = '#c8c8c8'
+  ctx.fillText(brand, W - padX, topY)
 
-  const cx = W / 2
-  const stageY = H * (ratio === 'square' ? 0.4 : 0.42)
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.045)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(padX, topY + 36)
+  ctx.lineTo(W - padX, topY + 36)
+  ctx.stroke()
 
-  if (mode !== 'match') {
-    const ambient = ctx.createRadialGradient(cx, stageY, 10, cx, stageY, mode === 'bonfire' ? 260 : 180)
-    ambient.addColorStop(0, `rgba(255, 140, 60, ${mode === 'bonfire' ? 0.08 : 0.04})`)
-    ambient.addColorStop(1, 'rgba(255, 140, 60, 0)')
-    ctx.fillStyle = ambient
-    ctx.beginPath()
-    ctx.arc(cx, stageY, mode === 'bonfire' ? 260 : 180, 0, Math.PI * 2)
-    ctx.fill()
-  }
+  // ── 火候场景 ──
+  const stageY = H * (isSquare ? 0.38 : 0.4)
+  const isClean = Number(intensity) <= 0.02 || Number(matchCount) <= 0
+  drawFireScene(ctx, cx, stageY, isClean ? 'match' : mode, {
+    matchCount: isClean ? 1 : matchCount,
+    intensity: isClean ? 0 : intensity,
+    clean: isClean,
+  })
 
-  drawSoftSmoke(ctx, cx, stageY - 10, mode, intensity)
-  drawFloor(ctx, cx, stageY + 78, mode)
-
-  if (mode === 'match') {
-    drawMatch(ctx, cx, stageY + 70, { scale: 1.45, lit: true, flameScale: 1.18 })
-  } else if (mode === 'cluster') {
-    const n = Math.min(6, Math.max(3, Math.ceil(Number(matchCount) || 3)))
-    for (let i = 0; i < n; i += 1) {
-      const t = n <= 1 ? 0.5 : i / (n - 1)
-      const x = cx + (t - 0.5) * 150
-      const rot = (t - 0.5) * 30
-      const y = stageY + 70 + Math.abs(t - 0.5) * 12
-      drawMatch(ctx, x, y, { scale: 1.08, rotation: rot, lit: true, flameScale: 1.05 })
-    }
-  } else {
-    const n = 12
-    for (let i = 0; i < n; i += 1) {
-      const ring = Math.floor(i / 6)
-      const slot = i % 6
-      const angle = (slot / 6) * Math.PI * 2 + ring * 0.4
-      const radius = 42 + ring * 34
-      const x = cx + Math.cos(angle) * radius
-      const y = stageY + 78 + Math.sin(angle) * radius * 0.26 + ring * 10
-      const rot = (angle * 180) / Math.PI + 90
-      drawMatch(ctx, x, y, {
-        scale: 0.86,
-        rotation: rot,
-        lit: true,
-        flameScale: 1.15 + intensity * 0.15,
-      })
-    }
-  }
-
-  const countText = formatCount(matchCount)
+  // ── 数字读数 ──
+  const countText = formatMatchCount(matchCount)
   const unitText = unit
-  const numY = H * (ratio === 'square' ? 0.74 : 0.72)
+  const numY = H * (isSquare ? 0.7 : 0.69)
 
   ctx.textBaseline = 'alphabetic'
-  ctx.font = '600 120px "JetBrains Mono", ui-monospace, monospace'
+  ctx.font = '600 132px "JetBrains Mono", ui-monospace, monospace'
   const numW = ctx.measureText(countText).width
-  ctx.font = '500 30px Inter, "Noto Sans SC", system-ui, sans-serif'
+  ctx.font = '500 34px Inter, "Noto Sans SC", system-ui, sans-serif'
   const unitW = ctx.measureText(unitText).width
-  const gap = 18
+  const gap = 16
   const rowW = numW + gap + unitW
   const rowX = cx - rowW / 2
 
   ctx.fillStyle = '#111111'
-  ctx.font = '600 120px "JetBrains Mono", ui-monospace, monospace'
+  ctx.font = '600 132px "JetBrains Mono", ui-monospace, monospace'
   ctx.textAlign = 'left'
   ctx.fillText(countText, rowX, numY)
 
   ctx.fillStyle = '#9a9a9a'
-  ctx.font = '500 30px Inter, "Noto Sans SC", system-ui, sans-serif'
-  ctx.fillText(unitText, rowX + numW + gap, numY - 14)
+  ctx.font = '500 34px Inter, "Noto Sans SC", system-ui, sans-serif'
+  ctx.fillText(unitText, rowX + numW + gap, numY - 16)
 
   const meta = []
   if (pm25 != null && Number.isFinite(Number(pm25))) meta.push(`PM2.5  ${Math.round(Number(pm25))}`)
   else if (aqi != null && Number.isFinite(Number(aqi))) meta.push(`AQI  ${Math.round(Number(aqi))}`)
   if (modeLabel) meta.push(modeLabel)
 
-  ctx.fillStyle = '#c2c2c2'
-  ctx.font = '400 24px Inter, "Noto Sans SC", system-ui, sans-serif'
+  ctx.fillStyle = '#b0b0b0'
+  ctx.font = '400 28px Inter, "Noto Sans SC", system-ui, sans-serif'
   ctx.textAlign = 'center'
-  if (meta.length) ctx.fillText(meta.join('    ·    '), cx, numY + 48)
+  if (meta.length) ctx.fillText(meta.join('   ·   '), cx, numY + 52)
 
-  ctx.fillStyle = '#d4d4d4'
-  ctx.font = '400 22px Inter, "Noto Sans SC", system-ui, sans-serif'
-  ctx.fillText(foot, cx, H - pad)
+  // ── 底部 ──
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.045)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(padX + 40, H - padY - 28)
+  ctx.lineTo(W - padX - 40, H - padY - 28)
+  ctx.stroke()
+
+  ctx.fillStyle = '#b8b8b8'
+  ctx.font = '400 26px Inter, "Noto Sans SC", system-ui, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(foot, cx, H - padY + 4)
 
   return canvas
 }
@@ -289,7 +177,7 @@ export async function shareOrDownloadCard(data) {
       await navigator.share({
         files: [file],
         title: data.brand || 'Match',
-        text: `${data.hidePlace ? '' : data.place || ''} ${formatCount(data.matchCount)} ${data.unit || ''}`.trim(),
+        text: `${data.hidePlace ? '' : data.place || ''} ${formatMatchCount(data.matchCount)} ${data.unit || ''}`.trim(),
       })
       return { method: 'share' }
     }
@@ -303,4 +191,4 @@ export async function shareOrDownloadCard(data) {
   return { method: 'download' }
 }
 
-export { formatCount }
+export { formatMatchCount }

@@ -1,6 +1,6 @@
 /* Match — minimal offline shell */
-const CACHE = 'match-shell-v1'
-const ASSETS = ['/', '/index.html', '/manifest.webmanifest']
+const CACHE = 'match-shell-v2'
+const ASSETS = ['/', '/index.html', '/404.html', '/manifest.webmanifest', '/icon.svg']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
