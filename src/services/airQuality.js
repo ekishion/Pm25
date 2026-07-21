@@ -4,7 +4,7 @@
  * 公开源：Open-Meteo（无密钥，模型值，仅兜底）
  *
  * 优先级：和风（国标站点）→ 彩云 → WAQI → Open-Meteo
- * 不再「谁快用谁」——模型源常比站点偏高一截。
+ * 总超时 OVERALL_DEADLINE_MS 强制进入兜底，避免分级等待累加到 8–10s。
  */
 
 import { cnAqiFromPm25, resolveDisplayAqi } from '../utils/aqi'
@@ -14,11 +14,13 @@ import { guardedRequest, clearRequestCache } from '../utils/requestGuard'
 
 const AIR_TTL = 5 * 60 * 1000
 const AIR_ERR_TTL = 12 * 1000
-const TIMEOUT = 5500
-/** 优先源等待窗口：超时再接受次级源 */
-const PRIMARY_WAIT_MS = 3000
+const TIMEOUT = 4500
+/** 优先源短等窗口 */
+const PRIMARY_WAIT_MS = 2200
+/** 整条空气链路硬上限（含兜底前的优先源） */
+export const OVERALL_DEADLINE_MS = 6500
 
-function normalize(partial) {
+export function normalize(partial) {
   let aqi = Number(partial.aqi)
   let pm25 = Number(partial.pm25)
   const pm10 = Number(partial.pm10)
@@ -29,7 +31,6 @@ function normalize(partial) {
   }
 
   const pm25Out = Number.isFinite(pm25) && pm25 >= 0 ? Math.round(pm25 * 10) / 10 : null
-  // 统一成国标口径：有 PM2.5 时以浓度反算纠偏美标 AQI
   const aqiOut = resolveDisplayAqi({
     pm25: pm25Out,
     aqi: Number.isFinite(aqi) ? aqi : null,
@@ -44,7 +45,7 @@ function normalize(partial) {
   }
 }
 
-function hasReading(result) {
+export function hasReading(result) {
   return result && (result.aqi != null || result.pm25 != null)
 }
 
@@ -55,19 +56,16 @@ function sleep(ms) {
 /**
  * 和风空气质量 v1（坐标）
  * GET /api/qweather/airquality/v1/current/{lat}/{lon}
- * 文档: https://dev.qweather.com/docs/api/air-quality/air-current/
  */
-async function fromQweather(lat, lon) {
+export async function fromQweather(lat, lon, { fetchImpl = fetchJson } = {}) {
   const path = `/airquality/v1/current/${encodeURIComponent(lat)}/${encodeURIComponent(lon)}`
-  const data = await fetchJson(`/api/qweather${path}`, { timeout: TIMEOUT })
+  const data = await fetchImpl(`/api/qweather${path}`, { timeout: TIMEOUT })
 
-  // v1 成功时通常无 code，或 code 为 "200"
   if (data.code && String(data.code) !== '200') {
     throw new Error(`qweather ${data.code}`)
   }
 
   const indexes = Array.isArray(data.indexes) ? data.indexes : []
-  // 优先中国国标 cn-mee / qa-cn 一类
   const cnIndex =
     indexes.find((x) => /cn-mee|cn_mee|china|chn/i.test(String(x?.code || x?.name || ''))) ||
     indexes.find((x) => /国标|中国/i.test(String(x?.name || ''))) ||
@@ -87,7 +85,6 @@ async function fromQweather(lat, lon) {
           String(p?.name || '').toLowerCase().includes(code),
       )
       if (!hit) continue
-      // concentration.value 单位多为 μg/m³；CO 可能是 mg/m³
       const v = hit.concentration?.value ?? hit.concentration ?? hit.value
       const n = Number(v)
       if (Number.isFinite(n)) return n
@@ -98,7 +95,6 @@ async function fromQweather(lat, lon) {
   const pm25 = pickPollutant('pm2p5', 'pm25', 'pm2.5')
   const pm10 = pickPollutant('pm10')
 
-  // 无 indexes 时尝试 stations 平均（少见）
   if (!Number.isFinite(aqi) && Array.isArray(data.stations) && data.stations.length) {
     const sAqi = Number(data.stations[0]?.aqi)
     if (Number.isFinite(sAqi)) aqi = sAqi
@@ -115,13 +111,9 @@ async function fromQweather(lat, lon) {
   return result
 }
 
-/**
- * 和风 v7 兼容：部分 Key 仍走 /v7/air/now?location=lon,lat
- * 仅当 v1 失败时使用
- */
-async function fromQweatherV7(lat, lon) {
+export async function fromQweatherV7(lat, lon, { fetchImpl = fetchJson } = {}) {
   const location = `${lon},${lat}`
-  const data = await fetchJson(
+  const data = await fetchImpl(
     `/api/qweather/v7/air/now?location=${encodeURIComponent(location)}`,
     { timeout: TIMEOUT },
   )
@@ -137,23 +129,22 @@ async function fromQweatherV7(lat, lon) {
   })
 }
 
-async function fromQweatherAny(lat, lon) {
+export async function fromQweatherAny(lat, lon, opts = {}) {
   try {
-    return await fromQweather(lat, lon)
+    return await fromQweather(lat, lon, opts)
   } catch {
-    return fromQweatherV7(lat, lon)
+    return fromQweatherV7(lat, lon, opts)
   }
 }
 
-async function fromCaiyun(lat, lon) {
+export async function fromCaiyun(lat, lon, { fetchImpl = fetchJson } = {}) {
   const path = `/${lon},${lat}/realtime.json`
-  const data = await fetchJson(`/api/caiyun${path}`, { timeout: TIMEOUT })
+  const data = await fetchImpl(`/api/caiyun${path}`, { timeout: TIMEOUT })
   if (data.status && data.status !== 'ok') throw new Error('caiyun')
 
   const aq = data.result?.realtime?.air_quality
   if (!aq) throw new Error('caiyun empty')
 
-  // 优先中国 AQI；不要误用 usa
   let aqi = null
   if (aq.aqi && typeof aq.aqi.chn === 'number') aqi = aq.aqi.chn
   else if (typeof aq.aqi === 'number') aqi = aq.aqi
@@ -172,12 +163,11 @@ async function fromCaiyun(lat, lon) {
   })
 }
 
-async function fromWaqi(lat, lon) {
+export async function fromWaqi(lat, lon, { fetchImpl = fetchJson } = {}) {
   const url = `/api/waqi/feed/geo:${lat};${lon}/`
-  const data = await fetchJson(url, { timeout: TIMEOUT })
+  const data = await fetchImpl(url, { timeout: TIMEOUT })
   if (data.status !== 'ok') throw new Error('waqi')
   const d = data.data
-  // WAQI 的 aqi 字段多为美标；优先用 pm25 反算国标
   const rawAqi = typeof d.aqi === 'number' ? d.aqi : Number(d.aqi)
   const pm25 = d.iaqi?.pm25?.v
   const aqi = cnAqiFromPm25(pm25) ?? (Number.isFinite(rawAqi) ? rawAqi : null)
@@ -191,17 +181,16 @@ async function fromWaqi(lat, lon) {
   })
 }
 
-async function fromOpenMeteo(lat, lon) {
+export async function fromOpenMeteo(lat, lon, { fetchImpl = fetchJson } = {}) {
   const url =
     `https://air-quality-api.open-meteo.com/v1/air-quality` +
     `?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}` +
     `&current=pm2_5,pm10,us_aqi,european_aqi`
 
-  const data = await fetchJson(url, { timeout: TIMEOUT })
+  const data = await fetchImpl(url, { timeout: TIMEOUT })
   const cur = data.current
   if (!cur) throw new Error('meteo empty')
 
-  // 模型浓度，仅兜底；AQI 用国标反算
   const aqi = cnAqiFromPm25(cur.pm2_5)
 
   return normalize({
@@ -214,74 +203,100 @@ async function fromOpenMeteo(lat, lon) {
 }
 
 /**
- * 分级获取：
- * 1) 和风（国标站点，最优先）
- * 2) 彩云
- * 3) WAQI
- * 4) Open-Meteo 模型兜底
+ * 分级获取（可注入 sources 便于单测）
+ * @param {number} la
+ * @param {number} lo
+ * @param {{
+ *   sources?: {
+ *     qweather?: () => Promise<any>,
+ *     caiyun?: () => Promise<any>,
+ *     waqi?: () => Promise<any>,
+ *     meteo?: () => Promise<any>,
+ *   },
+ *   primaryWaitMs?: number,
+ *   overallDeadlineMs?: number,
+ * }} [opts]
  */
-async function fetchAirQualityOnce(la, lo) {
-  const qweatherP = fromQweatherAny(la, lo).then((r) => {
-    if (!hasReading(r)) throw new Error('qweather empty')
-    return r
-  })
-  const caiyunP = fromCaiyun(la, lo).then((r) => {
-    if (!hasReading(r)) throw new Error('caiyun empty')
-    return r
-  })
-  const waqiP = fromWaqi(la, lo).then((r) => {
-    if (!hasReading(r)) throw new Error('waqi empty')
-    return r
-  })
+export async function fetchAirQualityOnce(la, lo, opts = {}) {
+  const primaryWait = opts.primaryWaitMs ?? PRIMARY_WAIT_MS
+  const deadline = opts.overallDeadlineMs ?? OVERALL_DEADLINE_MS
+  const started = Date.now()
+  const remain = () => Math.max(0, deadline - (Date.now() - started))
 
-  // 和风优先：短等
+  const sources = opts.sources || {
+    qweather: () => fromQweatherAny(la, lo),
+    caiyun: () => fromCaiyun(la, lo),
+    waqi: () => fromWaqi(la, lo),
+    meteo: () => fromOpenMeteo(la, lo),
+  }
+
+  const wrap = (fn, name) =>
+    fn().then((r) => {
+      if (!hasReading(r)) throw new Error(`${name} empty`)
+      return r
+    })
+
+  const qweatherP = wrap(sources.qweather, 'qweather')
+  const caiyunP = wrap(sources.caiyun, 'caiyun')
+  const waqiP = wrap(sources.waqi, 'waqi')
+
+  // 和风优先
+  const qwWait = Math.min(primaryWait, remain())
   const qwQuick = await Promise.race([
     qweatherP.catch(() => null),
-    sleep(PRIMARY_WAIT_MS).then(() => null),
+    sleep(qwWait).then(() => null),
   ])
   if (hasReading(qwQuick)) return qwQuick
+  if (remain() <= 0) {
+    // 总时限到：直接兜底
+    return wrap(sources.meteo, 'meteo')
+  }
 
   // 彩云次选
+  const cyWait = Math.min(primaryWait, remain())
   const caiyunQuick = await Promise.race([
     caiyunP.catch(() => null),
-    sleep(PRIMARY_WAIT_MS).then(() => null),
+    sleep(cyWait).then(() => null),
   ])
   if (hasReading(caiyunQuick)) return caiyunQuick
+  if (remain() <= 0) return wrap(sources.meteo, 'meteo')
 
-  // WAQI
+  // WAQI 短等
+  const waqiWait = Math.min(500, remain())
   const waqiQuick = await Promise.race([
     waqiP.catch(() => null),
-    sleep(500).then(() => null),
+    sleep(waqiWait).then(() => null),
   ])
   if (hasReading(waqiQuick)) return waqiQuick
 
-  // 再等优先源收尾
-  const settled = await Promise.allSettled([qweatherP, caiyunP, waqiP])
-  // 按优先级取第一个成功
-  const order = ['qweather', 'caiyun', 'waqi']
-  for (const name of order) {
-    const hit = settled.find(
-      (s) => s.status === 'fulfilled' && hasReading(s.value) && s.value.source === name,
-    )
-    if (hit) return hit.value
-  }
-  for (const s of settled) {
-    if (s.status === 'fulfilled' && hasReading(s.value)) return s.value
+  // 收尾：在剩余时间内等优先源
+  const tail = await Promise.race([
+    Promise.allSettled([qweatherP, caiyunP, waqiP]),
+    sleep(remain()).then(() => null),
+  ])
+
+  if (tail) {
+    const order = ['qweather', 'caiyun', 'waqi']
+    for (const name of order) {
+      const hit = tail.find(
+        (s) => s.status === 'fulfilled' && hasReading(s.value) && s.value.source === name,
+      )
+      if (hit) return hit.value
+    }
+    for (const s of tail) {
+      if (s.status === 'fulfilled' && hasReading(s.value)) return s.value
+    }
   }
 
-  // 仅兜底模型源
+  // 兜底模型
   try {
-    const meteo = await fromOpenMeteo(la, lo)
+    const meteo = await wrap(sources.meteo, 'meteo')
     if (hasReading(meteo)) return meteo
   } catch (e) {
     throw new Error(sanitizeError(e, 'air'))
   }
 
-  const last = settled
-    .filter((s) => s.status === 'rejected')
-    .map((s) => sanitizeError(s.reason, 'air'))
-    .join(';')
-  throw new Error(last || 'air empty')
+  throw new Error('air empty')
 }
 
 export async function fetchAirQuality({ lat, lon, force = false } = {}) {

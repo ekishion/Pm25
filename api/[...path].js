@@ -25,6 +25,7 @@ export default async function handler(request) {
       QWEATHER_HOST: process.env.QWEATHER_HOST,
       CAIYUN_TOKEN: process.env.CAIYUN_TOKEN,
       WAQI_TOKEN: process.env.WAQI_TOKEN || 'demo',
+      DAILY_API_LIMIT: process.env.DAILY_API_LIMIT,
     },
     pathSuffix,
   })

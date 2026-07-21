@@ -49,7 +49,7 @@ export async function renderShareCard(data) {
   // ── 顶部信息带 ──
   const topY = padY + 8
   ctx.textBaseline = 'middle'
-  ctx.font = '500 34px Inter, "Noto Sans SC", system-ui, sans-serif'
+  ctx.font = '500 34px system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
 
   if (place && !hidePlace) {
     ctx.textAlign = 'left'
@@ -83,21 +83,21 @@ export async function renderShareCard(data) {
   const numY = H * (isSquare ? 0.7 : 0.69)
 
   ctx.textBaseline = 'alphabetic'
-  ctx.font = '600 132px "JetBrains Mono", ui-monospace, monospace'
+  ctx.font = '600 132px ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace'
   const numW = ctx.measureText(countText).width
-  ctx.font = '500 34px Inter, "Noto Sans SC", system-ui, sans-serif'
+  ctx.font = '500 34px system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
   const unitW = ctx.measureText(unitText).width
   const gap = 16
   const rowW = numW + gap + unitW
   const rowX = cx - rowW / 2
 
   ctx.fillStyle = '#111111'
-  ctx.font = '600 132px "JetBrains Mono", ui-monospace, monospace'
+  ctx.font = '600 132px ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace'
   ctx.textAlign = 'left'
   ctx.fillText(countText, rowX, numY)
 
   ctx.fillStyle = '#9a9a9a'
-  ctx.font = '500 34px Inter, "Noto Sans SC", system-ui, sans-serif'
+  ctx.font = '500 34px system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
   ctx.fillText(unitText, rowX + numW + gap, numY - 16)
 
   const meta = []
@@ -106,7 +106,7 @@ export async function renderShareCard(data) {
   if (modeLabel) meta.push(modeLabel)
 
   ctx.fillStyle = '#b0b0b0'
-  ctx.font = '400 28px Inter, "Noto Sans SC", system-ui, sans-serif'
+  ctx.font = '400 28px system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
   ctx.textAlign = 'center'
   if (meta.length) ctx.fillText(meta.join('   ·   '), cx, numY + 52)
 
@@ -119,7 +119,7 @@ export async function renderShareCard(data) {
   ctx.stroke()
 
   ctx.fillStyle = '#b8b8b8'
-  ctx.font = '400 26px Inter, "Noto Sans SC", system-ui, sans-serif'
+  ctx.font = '400 26px system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText(foot, cx, H - padY + 4)

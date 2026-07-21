@@ -9,6 +9,20 @@ import { sanitizeError } from '../utils/safe'
 export const CLIENT_HEADER = 'X-Match-Client'
 export const CLIENT_HEADER_VALUE = '1'
 
+export class ApiError extends Error {
+  /**
+   * @param {string} message
+   * @param {{ status?: number, code?: string, body?: any }} [meta]
+   */
+  constructor(message, meta = {}) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = meta.status ?? 0
+    this.code = meta.code || ''
+    this.body = meta.body ?? null
+  }
+}
+
 function isApiPath(url) {
   try {
     if (url.startsWith('/api/')) return true
@@ -37,19 +51,34 @@ export async function fetchJson(url, options = {}) {
       ...options,
       signal: controller.signal,
       headers,
-      // 不带 cookies，减少跨站面
       credentials: 'same-origin',
     })
 
     if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`)
+      let body = null
+      try {
+        body = await res.json()
+      } catch {
+        /* ignore */
+      }
+      const code = body?.code || (res.status === 429 ? 'DAILY_LIMIT' : '')
+      const info = body?.info || `HTTP ${res.status}`
+      throw new ApiError(info, { status: res.status, code, body })
     }
 
     return await res.json()
   } catch (e) {
+    if (e instanceof ApiError) throw e
     if (e?.name === 'AbortError') throw new Error('timeout')
     throw new Error(sanitizeError(e, 'network'))
   } finally {
     clearTimeout(timer)
   }
+}
+
+export function isDailyLimitError(err) {
+  return (
+    err instanceof ApiError &&
+    (err.status === 429 || err.code === 'DAILY_LIMIT' || /daily limit/i.test(err.message || ''))
+  )
 }

@@ -21,6 +21,7 @@ export async function onRequest(context) {
       QWEATHER_HOST: env.QWEATHER_HOST,
       CAIYUN_TOKEN: env.CAIYUN_TOKEN,
       WAQI_TOKEN: env.WAQI_TOKEN || 'demo',
+      DAILY_API_LIMIT: env.DAILY_API_LIMIT,
     },
     pathSuffix,
   })

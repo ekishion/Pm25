@@ -2,124 +2,142 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import MatchScene from './components/MatchScene.vue'
 import ShareSheet from './components/ShareSheet.vue'
-import { detectLocation } from './services/location'
-import { fetchAirQuality } from './services/airQuality'
-import { fetchWeather, weatherToStyle } from './services/weather'
-import { calcMatchEquivalents, formatMatchCount } from './utils/aqi'
-import { animateNumber, sleep } from './utils/animate'
+import SplashScreen from './components/SplashScreen.vue'
 import { daypartStyle } from './utils/daypart'
-import { compareAndStore } from './utils/history'
 import { formatUpdatedLine } from './utils/time'
-import { createDevProbe } from './utils/debug'
-import { sanitizeError } from './utils/safe'
-import { localizeCity } from './utils/city'
-import { resolveFireMode } from './utils/fireMode'
+import { sleep } from './utils/animate'
 import { getLocale, initI18n, onLocaleChange, setLocale, t } from './i18n'
 import {
   loadSoundPreference,
   setSoundEnabled,
   unlockAudio,
-  playStrike,
   disposeAudio,
 } from './services/audio'
+import { useTimers } from './composables/useTimers'
+import { useAirQuality } from './composables/useAirQuality'
+import { useMatchStage } from './composables/useMatchStage'
+import { useAudioGesture } from './composables/useAudioGesture'
 
-const probe = createDevProbe()
+/** 开屏最长等待（毫秒）：网络挂起时仍进入主界面 */
+const SPLASH_MAX_MS = 12_000
 
-/** intro | striking | burning | failed */
-const stage = ref('intro')
-/** idle | striking | lit | failed */
-const firePhase = ref('idle')
-const loading = ref(true)
-const error = ref('')
-const location = ref(null)
-const air = ref(null)
-const weather = ref({ wind: 0, humidity: 50 })
-const soundOn = ref(true)
-const igniting = ref(false)
-const entered = ref(false)
-const grow = ref(false)
-const flash = ref(false)
-const showReadout = ref(false)
-const showFoot = ref(false)
-const showShareBtn = ref(false)
+const timers = useTimers()
+
 const shareOpen = ref(false)
 const shareHint = ref('')
 const guideOn = ref(false)
-const offline = ref(false)
-const animatedCount = ref(0)
-const countReady = ref(false)
-const historyLine = ref('')
-const localeTick = ref(0)
+const entered = ref(false)
+const soundOn = ref(true)
 const dayStyle = ref(daypartStyle())
 
-let cancelCountAnim = null
-let footTimer = 0
-let shareTimer = 0
-let hintTimer = 0
-let guideTimer = 0
-let dayTimer = 0
-let loadPromise = null
-let loadSeq = 0
-let lastLoadAt = 0
-const LOAD_COOLDOWN_MS = 12 * 1000
+/** boot | ready | leaving */
+const splashPhase = ref('boot')
+/** 真实加载进度 0–1 */
+const splashProgress = ref(0)
+const splashStatus = ref('')
+const splashMounted = ref(true)
 
-const matchInfo = computed(() =>
-  calcMatchEquivalents({
-    pm25: air.value?.pm25,
-    aqi: air.value?.aqi,
-  }),
-)
+const STAGE_I18N = {
+  start: 'splashStart',
+  location: 'splashLocation',
+  air: 'splashAir',
+  weather: 'splashWeather',
+  place: 'splashPlace',
+  fonts: 'splashStart',
+  done: 'splashDone',
+}
 
-const mode = computed(() =>
-  resolveFireMode({
-    matchesPerHour: matchInfo.value.matchesPerHour,
-    aqi: air.value?.aqi,
-    concentration: matchInfo.value.concentration,
-  }),
-)
+function onBootProgress({ stage: st, progress }) {
+  if (splashPhase.value !== 'boot') return
+  if (progress > splashProgress.value) splashProgress.value = progress
+  const key = STAGE_I18N[st]
+  if (key) splashStatus.value = t(key)
+}
 
-const wxStyle = computed(() => weatherToStyle(weather.value || {}))
+function flashHint(text) {
+  shareHint.value = text
+  timers.set('hint', () => {
+    shareHint.value = ''
+  }, 1800)
+}
+
+// match 在 airApi 之后赋值；配额回调经闭包延迟执行，安全
+let enterQuotaFailedRef = () => {}
+
+const airApi = useAirQuality({
+  onFlashHint: flashHint,
+  onQuotaExceeded: () => {
+    enterQuotaFailedRef()
+  },
+  onLoadProgress: onBootProgress,
+})
+
+const {
+  loading,
+  error,
+  air,
+  offline,
+  quotaExceeded,
+  quotaLimit,
+  localeTick,
+  place,
+  wxStyle,
+  loadData,
+  softRefresh: softRefreshAir,
+  bumpLocale,
+  syncOnlineStatus,
+} = airApi
+
+const match = useMatchStage({
+  air,
+  error,
+  loading,
+  quotaExceeded,
+  place,
+  localeTick,
+  timers,
+})
+
+const {
+  stage,
+  firePhase,
+  igniting,
+  grow,
+  flash,
+  showReadout,
+  showFoot,
+  showShareBtn,
+  matchInfo,
+  mode,
+  displayCount,
+  subtitle,
+  historyLine,
+  liveMessage,
+  ignite: runIgnite,
+  onMatchesChanged,
+  refreshBurningReadout,
+  cancelCountUp,
+  enterQuotaFailed,
+} = match
+
+enterQuotaFailedRef = enterQuotaFailed
+
+useAudioGesture()
 
 const appStyle = computed(() => ({
   ...dayStyle.value,
   ...wxStyle.value,
 }))
 
-const displayCount = computed(() => {
+const quotaHintLine = computed(() => {
   void localeTick.value
-  if (error.value && stage.value === 'failed') return '–'
-  if (!countReady.value && !showReadout.value) return '0'
-  return formatMatchCount(animatedCount.value)
-})
-
-const place = computed(() => {
-  void localeTick.value
-  if (loading.value && !location.value) return ''
-  return localizeCity(location.value?.city, getLocale())
-})
-
-const subtitle = computed(() => {
-  void localeTick.value
-  if (error.value && stage.value === 'failed') return t('fail')
-  if (stage.value !== 'burning') return ''
-  if (mode.value === 'bonfire') return t('modeBonfire')
-  if (mode.value === 'cluster') return t('modeCluster')
-  return t('modeMatch')
+  return t('quotaHint', { n: quotaLimit.value || 200 })
 })
 
 const updatedLine = computed(() => {
   void localeTick.value
   if (!air.value?.updatedAt) return ''
   return formatUpdatedLine(air.value.updatedAt)
-})
-
-const liveMessage = computed(() => {
-  void localeTick.value
-  if (stage.value === 'failed') return t('failHint')
-  if (stage.value === 'burning' && showReadout.value) {
-    return `${displayCount.value} ${t('unit')}`
-  }
-  return ''
 })
 
 const sharePayload = computed(() => ({
@@ -135,145 +153,11 @@ const sharePayload = computed(() => ({
   foot: t('foot'),
 }))
 
-function startCountUp(to) {
-  cancelCountAnim?.()
-  const target = Number(to)
-  if (!Number.isFinite(target)) {
-    animatedCount.value = 0
-    countReady.value = true
-    return
-  }
-  animatedCount.value = 0
-  countReady.value = false
-  cancelCountAnim = animateNumber({
-    from: 0,
-    to: target,
-    duration: 1500,
-    onUpdate: (v) => {
-      animatedCount.value = v
-    },
-    onComplete: () => {
-      animatedCount.value = target
-      countReady.value = true
-    },
-  })
-}
-
-function flashHint(text) {
-  shareHint.value = text
-  window.clearTimeout(hintTimer)
-  hintTimer = window.setTimeout(() => {
-    shareHint.value = ''
-  }, 1800)
-}
-
-function rememberHistory() {
-  if (!place.value || error.value) return
-  const delta = compareAndStore({
-    city: place.value,
-    matches: matchInfo.value.matchesPerHour,
-  })
-  if (!delta) {
-    historyLine.value = ''
-    return
-  }
-  historyLine.value = t(delta.textKey, delta.n != null ? { n: delta.n } : undefined)
-}
-
-async function loadData(options = {}) {
-  const force = Boolean(options.force)
-
-  // 非强制：复用进行中的请求
-  if (loadPromise && !force) return loadPromise
-
-  if (!force && lastLoadAt && Date.now() - lastLoadAt < LOAD_COOLDOWN_MS && (air.value || location.value)) {
-    loading.value = false
-    if (options.fromUser) flashHint(t('waitCooldown'))
-    return
-  }
-
-  const seq = ++loadSeq
-  loading.value = true
-  if (force) error.value = ''
-
-  const run = (async () => {
-    try {
-      offline.value = typeof navigator !== 'undefined' && navigator.onLine === false
-      const loc = await detectLocation({ force })
-      if (seq !== loadSeq) return
-      location.value = {
-        city: loc.city,
-        province: loc.province,
-        adcode: loc.adcode || '',
-        lat: loc.lat,
-        lon: loc.lon,
-        source: loc.source,
-      }
-      if (
-        !Number.isFinite(loc.lat) ||
-        !Number.isFinite(loc.lon) ||
-        (Math.abs(loc.lat) < 1e-6 && Math.abs(loc.lon) < 1e-6)
-      ) {
-        throw new Error('coords')
-      }
-
-      // 天气失败不挡空气；空气失败才算整体失败
-      const wxP = fetchWeather({
-        lat: loc.lat,
-        lon: loc.lon,
-        adcode: loc.adcode || '',
-        force,
-      }).catch(() => ({ wind: 0, humidity: 50, source: '' }))
-
-      const aq = await fetchAirQuality({ lat: loc.lat, lon: loc.lon, force })
-      const wx = await wxP
-      if (seq !== loadSeq) return
-
-      if (aq?.aqi == null && aq?.pm25 == null) {
-        throw new Error('air empty')
-      }
-
-      air.value = aq
-      weather.value = wx
-      lastLoadAt = Date.now()
-      error.value = ''
-      probe.note('loaded', {
-        source: aq.source,
-        weather: wx.source,
-        city: loc.city,
-        aqi: aq.aqi,
-        pm25: aq.pm25,
-      })
-      if (options.fromUser) flashHint(t('refreshed'))
-    } catch (e) {
-      if (seq !== loadSeq) return
-      // 强刷失败时清掉过期读数，避免一直显示假 0
-      if (force) air.value = null
-      error.value = sanitizeError(e, 'fail')
-      probe.note('load-fail', error.value)
-    } finally {
-      // 仅最新一次负责收尾 loading
-      if (seq === loadSeq) {
-        loading.value = false
-        loadPromise = null
-      }
-    }
-  })()
-
-  loadPromise = run
-  return run
-}
-
 async function softRefresh() {
-  if (lastLoadAt && Date.now() - lastLoadAt < LOAD_COOLDOWN_MS && !error.value) {
-    flashHint(t('waitCooldown'))
-    return
-  }
-  await loadData({ force: true, fromUser: true })
-  if (stage.value === 'burning' && !error.value && air.value) {
-    startCountUp(matchInfo.value.matchesPerHour)
-    rememberHistory()
-  }
+  await softRefreshAir({
+    stage: stage.value,
+    onBurningRefresh: refreshBurningReadout,
+  })
 }
 
 async function toggleSound() {
@@ -284,11 +168,11 @@ async function toggleSound() {
 function toggleLang() {
   const next = getLocale() === 'zh' ? 'en' : 'zh'
   setLocale(next)
-  localeTick.value += 1
+  bumpLocale()
 }
 
 function openShare() {
-  if (stage.value !== 'burning' || error.value) return
+  if (stage.value !== 'burning' || error.value || quotaExceeded.value) return
   shareOpen.value = true
 }
 
@@ -299,97 +183,14 @@ function onShareDone(method) {
 }
 
 async function ignite() {
-  if (igniting.value || stage.value === 'burning' || stage.value === 'failed') return
-  igniting.value = true
   guideOn.value = false
   await unlockAudio()
-
-  const start = Date.now()
-  while (loading.value && Date.now() - start < 4000) {
-    await sleep(80)
-  }
-
-  if (error.value || (!air.value && !loading.value)) {
-    stage.value = 'striking'
-    firePhase.value = 'striking'
-    await playStrike()
-    await sleep(520)
-    firePhase.value = 'failed'
-    stage.value = 'failed'
-    showReadout.value = true
-    showFoot.value = true
-    window.clearTimeout(footTimer)
-    footTimer = window.setTimeout(() => {
-      showFoot.value = false
-    }, 3600)
-    igniting.value = false
-    return
-  }
-
-  const clean = matchInfo.value.isClean
-
-  if (clean) {
-    // 极净：轻触即止，不闪全屏、不旺烧再熄
-    stage.value = 'striking'
-    firePhase.value = 'striking'
-    await playStrike()
-    await sleep(380)
-    firePhase.value = 'lit'
-    stage.value = 'burning'
-    grow.value = false
-    showReadout.value = true
-    startCountUp(matchInfo.value.matchesPerHour)
-    rememberHistory()
-    showFoot.value = true
-    window.clearTimeout(footTimer)
-    footTimer = window.setTimeout(() => {
-      showFoot.value = false
-    }, 2800)
-    window.clearTimeout(shareTimer)
-    shareTimer = window.setTimeout(() => {
-      showShareBtn.value = true
-    }, 900)
-    igniting.value = false
-    return
-  }
-
-  stage.value = 'striking'
-  firePhase.value = 'striking'
-  flash.value = true
-  window.setTimeout(() => {
-    flash.value = false
-  }, 180)
-  await playStrike()
-  await sleep(720)
-
-  firePhase.value = 'lit'
-  stage.value = 'burning'
-  grow.value = false
-
-  showReadout.value = true
-  startCountUp(matchInfo.value.matchesPerHour)
-  rememberHistory()
-
-  await sleep(420)
-  grow.value = true
-
-  showFoot.value = true
-  window.clearTimeout(footTimer)
-  footTimer = window.setTimeout(() => {
-    showFoot.value = false
-  }, 3200)
-
-  window.clearTimeout(shareTimer)
-  shareTimer = window.setTimeout(() => {
-    showShareBtn.value = true
-  }, 1600)
-
-  igniting.value = false
+  await runIgnite()
 }
 
 function onKeydown(e) {
   if (e.key === 'Enter' || e.key === ' ') {
-    if (stage.value === 'intro' && !igniting.value) {
+    if (stage.value === 'intro' && !igniting.value && !splashMounted.value) {
       e.preventDefault()
       ignite()
     }
@@ -400,48 +201,38 @@ function onKeydown(e) {
   }
 }
 
+function onOnline() {
+  offline.value = false
+}
+
+function onOffline() {
+  offline.value = true
+}
+
 watch(
   () => matchInfo.value.matchesPerHour,
-  (n) => {
-    if (stage.value === 'burning' && showReadout.value && !error.value) {
-      startCountUp(n)
-      grow.value = true
-    }
-  },
+  (n) => onMatchesChanged(n),
 )
 
-onMounted(async () => {
-  initI18n()
-  localeTick.value += 1
-  onLocaleChange(() => {
-    localeTick.value += 1
-  })
+watch(quotaExceeded, (v) => {
+  if (v) enterQuotaFailed()
+})
 
-  soundOn.value = loadSoundPreference()
-  setSoundEnabled(soundOn.value)
-
-  offline.value = typeof navigator !== 'undefined' && navigator.onLine === false
-  window.addEventListener('online', () => {
-    offline.value = false
-  })
-  window.addEventListener('offline', () => {
-    offline.value = true
-  })
-  window.addEventListener('keydown', onKeydown)
-
-  dayStyle.value = daypartStyle()
-  dayTimer = window.setInterval(() => {
-    dayStyle.value = daypartStyle()
-  }, 10 * 60 * 1000)
-
-  loadData()
-  await sleep(40)
+async function finishSplash() {
+  if (!splashMounted.value) return
+  splashProgress.value = 1
+  splashStatus.value = t('splashDone')
+  splashPhase.value = 'ready'
+  await sleep(320)
   entered.value = true
+  splashPhase.value = 'leaving'
+  await sleep(560)
+  splashMounted.value = false
 
   try {
     if (!localStorage.getItem('pm25-guided')) {
       guideOn.value = true
-      guideTimer = window.setTimeout(() => {
+      timers.set('guide', () => {
         guideOn.value = false
         try {
           localStorage.setItem('pm25-guided', '1')
@@ -453,38 +244,125 @@ onMounted(async () => {
   } catch {
     /* ignore */
   }
+}
+
+/** 与数据加载并行：字体 / 静态资源 */
+async function loadClientAssets() {
+  onBootProgress({ stage: 'start', progress: 0.04 })
+  const jobs = []
+
+  if (typeof document !== 'undefined' && document.fonts?.ready) {
+    jobs.push(
+      document.fonts.ready
+        .then(() => {
+          onBootProgress({ stage: 'fonts', progress: 0.12 })
+        })
+        .catch(() => {}),
+    )
+  }
+
+  if (typeof fetch === 'function') {
+    jobs.push(
+      fetch('/icon.svg', { cache: 'force-cache' })
+        .then(() => {
+          onBootProgress({ stage: 'start', progress: Math.max(splashProgress.value, 0.08) })
+        })
+        .catch(() => {}),
+    )
+  }
+
+  if (jobs.length) await Promise.allSettled(jobs)
+}
+
+let offLocale = null
+
+onMounted(async () => {
+  initI18n()
+  localeTick.value += 1
+  splashStatus.value = t('splashStart')
+  offLocale = onLocaleChange(() => {
+    bumpLocale()
+    // 开屏中切语言时更新状态文案
+    if (splashPhase.value === 'boot' && splashStatus.value) {
+      // 保持当前进度，仅刷新通用提示
+      splashStatus.value = t('splashHint')
+    }
+  })
+
+  soundOn.value = loadSoundPreference()
+  setSoundEnabled(soundOn.value)
+
+  syncOnlineStatus()
+  window.addEventListener('online', onOnline)
+  window.addEventListener('offline', onOffline)
+  window.addEventListener('keydown', onKeydown)
+
+  dayStyle.value = daypartStyle()
+  timers.interval('daypart', () => {
+    dayStyle.value = daypartStyle()
+  }, 10 * 60 * 1000)
+
+  const assetsP = loadClientAssets()
+  const loadP = loadData().catch(() => {
+    /* 失败也进主界面 */
+  })
 
   if ('serviceWorker' in navigator) {
-    try {
-      await navigator.serviceWorker.register('/sw.js')
-    } catch {
-      /* ignore */
-    }
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
   }
+
+  // 真实加载；超时则强制结束开屏，避免永久卡住
+  let timedOut = false
+  await Promise.race([
+    Promise.all([loadP, assetsP]),
+    sleep(SPLASH_MAX_MS).then(() => {
+      timedOut = true
+    }),
+  ])
+
+  if (timedOut && splashPhase.value === 'boot') {
+    onBootProgress({ stage: 'done', progress: 1 })
+  }
+
+  await finishSplash()
 })
 
 onUnmounted(() => {
-  cancelCountAnim?.()
-  window.clearTimeout(footTimer)
-  window.clearTimeout(shareTimer)
-  window.clearTimeout(hintTimer)
-  window.clearTimeout(guideTimer)
-  window.clearInterval(dayTimer)
+  cancelCountUp()
+  offLocale?.()
+  offLocale = null
+  window.removeEventListener('online', onOnline)
+  window.removeEventListener('offline', onOffline)
   window.removeEventListener('keydown', onKeydown)
   disposeAudio()
 })
 </script>
 
 <template>
+  <SplashScreen
+    v-if="splashMounted"
+    :phase="splashPhase"
+    :progress="splashProgress"
+    :status-text="splashStatus"
+  />
+
   <div
     class="app"
-    :class="{ entered, flash, burning: stage === 'burning', failed: stage === 'failed' }"
+    :class="{
+      entered,
+      flash,
+      burning: stage === 'burning',
+      failed: stage === 'failed',
+      quota: quotaExceeded,
+      'off-scale': matchInfo.offScale && stage === 'burning',
+      'behind-splash': splashMounted && splashPhase === 'boot',
+    }"
     :style="appStyle"
   >
     <div class="warm-flash" aria-hidden="true" />
     <div class="day-veil" aria-hidden="true" />
 
-    <div class="sr-only" aria-live="polite">{{ liveMessage }}</div>
+    <div class="sr-only" aria-live="polite" aria-atomic="true">{{ liveMessage }}</div>
 
     <header class="top">
       <button
@@ -552,11 +430,13 @@ onUnmounted(() => {
     </header>
 
     <main class="stage">
-      <div class="scene-wrap">
+      <div class="scene-wrap" aria-hidden="true">
         <MatchScene
           :phase="firePhase"
           :match-count="matchInfo.matchesPerHour"
           :intensity="matchInfo.burnIntensity"
+          :clean="matchInfo.isClean"
+          :off-scale="matchInfo.offScale"
           :mode="mode"
           :grow="grow"
           :wind="Number(wxStyle['--wind'] || 0)"
@@ -566,24 +446,25 @@ onUnmounted(() => {
       </div>
 
       <button
-        v-if="stage === 'intro'"
+        v-if="stage === 'intro' && !splashMounted"
         class="ignite"
         type="button"
         :disabled="igniting"
         :aria-label="t('ignite')"
         @click="ignite"
       >
-        <span class="ignite-dot" />
+        <span class="ignite-dot" aria-hidden="true" />
         <span>{{ loading ? t('loading') : t('ignite') }}</span>
       </button>
 
-      <div class="readout" :class="{ show: showReadout || stage === 'failed' }">
+      <div class="readout" :class="{ show: showReadout || stage === 'failed' || quotaExceeded }">
         <div class="count">
-          <span class="num">{{ displayCount }}</span>
+          <span class="num" :class="{ muted: quotaExceeded }">{{ displayCount }}</span>
           <span class="unit">{{ t('unit') }}</span>
         </div>
         <div class="meta">
-          <span v-if="stage === 'failed'">{{ t('failHint') }}</span>
+          <span v-if="quotaExceeded">{{ t('quotaTitle') }}</span>
+          <span v-else-if="stage === 'failed'">{{ t('failHint') }}</span>
           <template v-else>
             <span v-if="air?.pm25 != null">PM2.5 {{ Math.round(air.pm25) }}</span>
             <span v-else-if="air?.aqi != null">AQI {{ air.aqi }}</span>
@@ -591,17 +472,30 @@ onUnmounted(() => {
               v-if="air?.pm25 != null && air?.aqi != null"
               class="sep"
             >AQI {{ air.aqi }}</span>
-            <span v-if="subtitle" class="sep">{{ subtitle }}</span>
+            <span v-if="subtitle" class="sep" :class="{ warn: matchInfo.offScale }">{{ subtitle }}</span>
           </template>
         </div>
-        <div v-if="updatedLine && stage === 'burning'" class="submeta">{{ updatedLine }}</div>
-        <div v-if="historyLine && stage === 'burning'" class="submeta">{{ historyLine }}</div>
-        <div v-if="offline" class="submeta">{{ t('offline') }}</div>
+        <div v-if="quotaExceeded" class="submeta">{{ quotaHintLine }}</div>
+        <div v-else-if="matchInfo.offScale && stage === 'burning'" class="submeta warn">
+          {{ t('offScaleHint') }}
+        </div>
+        <div v-if="updatedLine && stage === 'burning' && !quotaExceeded" class="submeta">{{ updatedLine }}</div>
+        <div v-if="historyLine && stage === 'burning' && !quotaExceeded" class="submeta">{{ historyLine }}</div>
+        <div v-if="offline && !quotaExceeded" class="submeta">{{ t('offline') }}</div>
       </div>
     </main>
 
-    <footer class="foot" :class="{ show: showFoot || !!shareHint || guideOn }">
-      {{ shareHint || (guideOn ? t('guide') : stage === 'failed' ? t('failHint') : t('foot')) }}
+    <footer class="foot" :class="{ show: showFoot || !!shareHint || guideOn || quotaExceeded }">
+      {{
+        shareHint ||
+        (quotaExceeded
+          ? t('quotaFoot')
+          : guideOn
+            ? t('guide')
+            : stage === 'failed'
+              ? t('failHint')
+              : t('foot'))
+      }}
     </footer>
 
     <ShareSheet
@@ -638,6 +532,12 @@ onUnmounted(() => {
 
 .app.entered {
   opacity: 1;
+  transform: none;
+}
+
+.app.behind-splash {
+  opacity: 0;
+  pointer-events: none;
   transform: none;
 }
 
@@ -886,6 +786,10 @@ onUnmounted(() => {
   color: #111;
 }
 
+.num.muted {
+  color: #bbb;
+}
+
 .unit {
   font-size: 1.05rem;
   color: var(--text-soft);
@@ -927,6 +831,20 @@ onUnmounted(() => {
   content: '·';
   margin-right: 14px;
   color: #ddd;
+}
+
+.meta .sep.warn,
+.submeta.warn {
+  color: #c45a2a;
+}
+
+.app.quota .scene-wrap {
+  filter: grayscale(0.55) saturate(0.55);
+  opacity: 0.88;
+}
+
+.app.off-scale .num {
+  letter-spacing: -0.04em;
 }
 
 .foot {

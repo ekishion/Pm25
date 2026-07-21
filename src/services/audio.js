@@ -53,6 +53,11 @@ export function loadSoundPreference() {
   return enabled
 }
 
+/**
+ * 恢复 AudioContext。
+ * 须在用户手势同步调用链内尽早调用（见 useAudioGesture），
+ * 避免 iOS Safari 在 await 数据后再次 suspend。
+ */
 export async function unlockAudio() {
   const c = ensureContext()
   if (!c) return false
@@ -63,8 +68,8 @@ export async function unlockAudio() {
       return false
     }
   }
-  unlocked = true
-  return true
+  unlocked = c.state === 'running'
+  return unlocked
 }
 
 /** 生成极短噪声，调用方用完即释放引用 */

@@ -5,7 +5,11 @@
  * CSRF / 盗刷防护：
  * 1) 必须带自定义头 X-Match-Client（跨站简单请求带不上；带上会触发 CORS 预检，我们不放行）
  * 2) 若有 Origin / Referer，必须与当前站点同源
+ *
+ * 日配额：env.DAILY_API_LIMIT（默认 200，≤0 不限制）
  */
+
+import { parseDailyLimit, takeQuota } from './quota.mjs'
 
 const UPSTREAM = {
   amap: 'https://restapi.amap.com',
@@ -18,14 +22,20 @@ const UPSTREAM = {
 export const CLIENT_HEADER = 'x-match-client'
 export const CLIENT_HEADER_VALUE = '1'
 
-export function jsonError(message, status = 502) {
-  return new Response(JSON.stringify({ status: 'error', info: message }), {
-    status,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'no-store',
-    },
-  })
+/**
+ * @param {string} message
+ * @param {number} [status]
+ * @param {Record<string, string|number|boolean|null|undefined>} [extra]
+ * @param {Record<string, string>} [extraHeaders]
+ */
+export function jsonError(message, status = 502, extra = {}, extraHeaders = {}) {
+  const body = { status: 'error', info: message, ...extra }
+  const headers = {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    ...extraHeaders,
+  }
+  return new Response(JSON.stringify(body), { status, headers })
 }
 
 /** 去掉 /api/{provider} 前缀，得到上游 path */
@@ -59,45 +69,86 @@ export function sanitizeUpstreamPath(rest) {
 }
 
 /**
- * CSRF / 跨站盗用检查。通过返回 null，拒绝返回 Response。
- * @param {Request} request
- * @returns {Response|null}
+ * CSRF 校验核心（Node Connect req / Fetch Request 共用）
+ * @param {{ method?: string, getHeader: (name: string) => string|undefined|null, selfOrigin: string }} input
+ * @returns {{ ok: true } | { ok: false, reason: string }}
  */
-export function assertTrustedClient(request) {
-  // 预检：不提供 CORS 放行头，直接拒绝
-  if (request.method === 'OPTIONS') {
-    return jsonError('forbidden', 403)
+export function evaluateTrustedClient({ method = 'GET', getHeader, selfOrigin }) {
+  if (String(method).toUpperCase() === 'OPTIONS') {
+    return { ok: false, reason: 'forbidden' }
   }
 
-  const marker = request.headers.get(CLIENT_HEADER)
-  if (marker !== CLIENT_HEADER_VALUE) {
-    return jsonError('forbidden', 403)
+  const marker = getHeader(CLIENT_HEADER) || getHeader('x-match-client')
+  if (String(marker || '') !== CLIENT_HEADER_VALUE) {
+    return { ok: false, reason: 'forbidden' }
   }
 
-  const reqUrl = new URL(request.url)
-  const reqOrigin = reqUrl.origin
-
-  const origin = request.headers.get('origin')
+  const origin = getHeader('origin')
   if (origin) {
-    if (origin !== reqOrigin) {
-      return jsonError('forbidden origin', 403)
-    }
-    return null
+    if (origin !== selfOrigin) return { ok: false, reason: 'forbidden origin' }
+    return { ok: true }
   }
 
-  const referer = request.headers.get('referer')
+  const referer = getHeader('referer')
   if (referer) {
     try {
-      if (new URL(referer).origin !== reqOrigin) {
-        return jsonError('forbidden referer', 403)
+      if (new URL(referer).origin !== selfOrigin) {
+        return { ok: false, reason: 'forbidden referer' }
       }
     } catch {
-      return jsonError('forbidden referer', 403)
+      return { ok: false, reason: 'forbidden referer' }
     }
   }
 
   // 同源 fetch 可能无 Origin/Referer；自定义头已校验，放行
-  return null
+  return { ok: true }
+}
+
+/**
+ * CSRF / 跨站盗用检查（Fetch Request）。通过返回 null，拒绝返回 Response。
+ * @param {Request} request
+ * @returns {Response|null}
+ */
+export function assertTrustedClient(request) {
+  const reqUrl = new URL(request.url)
+  const result = evaluateTrustedClient({
+    method: request.method,
+    selfOrigin: reqUrl.origin,
+    getHeader: (name) => request.headers.get(name),
+  })
+  if (result.ok) return null
+  return jsonError(result.reason, 403)
+}
+
+/**
+ * Node/Connect 风格请求的 CSRF 检查（Vite dev/preview 中间件用）
+ * @param {{ method?: string, headers: Record<string, string|string[]|undefined> }} req
+ * @returns {boolean}
+ */
+export function isTrustedNodeRequest(req) {
+  const headers = req.headers || {}
+  const hostHeader = headers['x-forwarded-host'] || headers.host || ''
+  const host = String(Array.isArray(hostHeader) ? hostHeader[0] : hostHeader)
+    .split(',')[0]
+    .trim()
+  const protoHeader = headers['x-forwarded-proto'] || 'http'
+  const proto = String(Array.isArray(protoHeader) ? protoHeader[0] : protoHeader)
+    .split(',')[0]
+    .trim()
+  const selfOrigin = `${proto}://${host}`
+
+  const getHeader = (name) => {
+    const key = String(name).toLowerCase()
+    const v = headers[key]
+    if (Array.isArray(v)) return v[0]
+    return v
+  }
+
+  return evaluateTrustedClient({
+    method: req.method,
+    selfOrigin,
+    getHeader,
+  }).ok
 }
 
 function withSearch(path, searchParams, mutator) {
@@ -121,6 +172,27 @@ export async function proxyProvider(request, { provider, env, pathSuffix }) {
   const blocked = assertTrustedClient(request)
   if (blocked) return blocked
 
+  // 日配额：每次成功进入上游前扣 1；超限 429
+  const limit = parseDailyLimit(env || {})
+  const quota = takeQuota({ limit, key: 'api' })
+  if (!quota.allowed) {
+    return jsonError(
+      'daily limit',
+      429,
+      {
+        code: 'DAILY_LIMIT',
+        limit: quota.limit,
+        remaining: 0,
+        day: quota.day,
+      },
+      {
+        'x-match-quota-limit': String(quota.limit),
+        'x-match-quota-remaining': '0',
+        'retry-after': '3600',
+      },
+    )
+  }
+
   const url = new URL(request.url)
   let rest
   try {
@@ -135,6 +207,12 @@ export async function proxyProvider(request, { provider, env, pathSuffix }) {
     return jsonError('bad path', 400)
   }
 
+  const quotaHeaders = {
+    'x-match-quota-limit': String(quota.limit || 0),
+    'x-match-quota-remaining':
+      quota.remaining === Infinity ? '' : String(quota.remaining),
+  }
+
   try {
     if (provider === 'amap') {
       const key = env.AMAP_KEY || ''
@@ -142,7 +220,7 @@ export async function proxyProvider(request, { provider, env, pathSuffix }) {
       const path = withSearch(rest || '/', url.searchParams, (sp) => {
         if (!sp.get('key')) sp.set('key', key)
       })
-      return forward(`${UPSTREAM.amap}${path}`, request.method)
+      return forward(`${UPSTREAM.amap}${path}`, request.method, quotaHeaders)
     }
 
     if (provider === 'caiyun') {
@@ -151,7 +229,7 @@ export async function proxyProvider(request, { provider, env, pathSuffix }) {
       // 客户端: /api/caiyun/{lon},{lat}/realtime.json
       // 上游:   /v2.5/{token}/{lon},{lat}/realtime.json
       const path = withSearch(`/v2.5/${token}${rest || '/'}`, url.searchParams)
-      return forward(`${UPSTREAM.caiyun}${path}`, request.method)
+      return forward(`${UPSTREAM.caiyun}${path}`, request.method, quotaHeaders)
     }
 
     if (provider === 'waqi') {
@@ -159,7 +237,7 @@ export async function proxyProvider(request, { provider, env, pathSuffix }) {
       const path = withSearch(rest || '/', url.searchParams, (sp) => {
         if (!sp.get('token')) sp.set('token', token)
       })
-      return forward(`${UPSTREAM.waqi}${path}`, request.method)
+      return forward(`${UPSTREAM.waqi}${path}`, request.method, quotaHeaders)
     }
 
     if (provider === 'qweather') {
@@ -171,7 +249,7 @@ export async function proxyProvider(request, { provider, env, pathSuffix }) {
         if (!sp.get('key')) sp.set('key', key)
         if (!sp.get('lang')) sp.set('lang', 'zh')
       })
-      return forward(`${base}${path}`, request.method)
+      return forward(`${base}${path}`, request.method, quotaHeaders)
     }
 
     return jsonError('unknown provider', 404)
@@ -180,20 +258,45 @@ export async function proxyProvider(request, { provider, env, pathSuffix }) {
   }
 }
 
-async function forward(target, method) {
-  const res = await fetch(target, {
-    method,
-    headers: {
-      accept: 'application/json',
-      'user-agent': 'pm25-match-proxy/1.0',
-    },
-    redirect: 'follow',
-  })
+/** 上游 fetch 超时（避免拖满 Edge 执行时长） */
+export const UPSTREAM_TIMEOUT_MS = 8000
+
+async function forward(target, method, extraHeaders = {}) {
+  let signal
+  try {
+    // Edge / 现代运行时支持 AbortSignal.timeout
+    signal = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
+  } catch {
+    const c = new AbortController()
+    signal = c.signal
+    setTimeout(() => c.abort(), UPSTREAM_TIMEOUT_MS)
+  }
+
+  let res
+  try {
+    res = await fetch(target, {
+      method,
+      headers: {
+        accept: 'application/json',
+        'user-agent': 'pm25-match-proxy/1.0',
+      },
+      redirect: 'follow',
+      signal,
+    })
+  } catch (e) {
+    if (e?.name === 'TimeoutError' || e?.name === 'AbortError') {
+      return jsonError('upstream timeout', 504)
+    }
+    throw e
+  }
 
   const headers = new Headers()
   const ct = res.headers.get('content-type')
   if (ct) headers.set('content-type', ct)
   headers.set('cache-control', 'public, max-age=60')
+  for (const [k, v] of Object.entries(extraHeaders || {})) {
+    if (v != null && v !== '') headers.set(k, String(v))
+  }
 
   return new Response(res.body, {
     status: res.status,

@@ -1,49 +1,45 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import { CLIENT_HEADER, CLIENT_HEADER_VALUE } from './server/proxy.mjs'
+import { isTrustedNodeRequest } from './server/proxy.mjs'
+import { parseDailyLimit, takeQuota } from './server/quota.mjs'
 
 /**
  * 密钥只存在于 Node 进程（非 VITE_ 前缀），不会打进浏览器包。
  * 前端一律请求同源 /api/*，由代理注入 key/token。
- * 与线上一致：必须带 X-Match-Client，且 Origin/Referer 同源。
+ * CSRF 真源：server/proxy.mjs（与线上 Edge 共用）
  */
 
-function isTrustedApiRequest(req) {
-  const marker = req.headers[CLIENT_HEADER] || req.headers['x-match-client']
-  if (String(marker) !== CLIENT_HEADER_VALUE) return false
-
-  const host = req.headers['x-forwarded-host'] || req.headers.host || ''
-  const proto = req.headers['x-forwarded-proto'] || 'http'
-  const selfOrigin = `${proto}://${String(host).split(',')[0].trim()}`
-
-  const origin = req.headers.origin
-  if (origin && origin !== selfOrigin) return false
-
-  const referer = req.headers.referer
-  if (referer) {
-    try {
-      if (new URL(referer).origin !== selfOrigin) return false
-    } catch {
-      return false
-    }
-  }
-  return true
-}
-
-function apiGuardPlugin() {
+function apiGuardPlugin(env = {}) {
+  const limit = parseDailyLimit(env)
   const guard = (req, res, next) => {
     if (!req.url?.startsWith('/api/')) return next()
-    if (req.method === 'OPTIONS') {
+    if (!isTrustedNodeRequest(req)) {
       res.statusCode = 403
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ status: 'error', info: 'forbidden' }))
       return
     }
-    if (!isTrustedApiRequest(req)) {
-      res.statusCode = 403
+    const q = takeQuota({ limit, key: 'api' })
+    if (!q.allowed) {
+      res.statusCode = 429
       res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ status: 'error', info: 'forbidden' }))
+      res.setHeader('x-match-quota-limit', String(q.limit))
+      res.setHeader('x-match-quota-remaining', '0')
+      res.end(
+        JSON.stringify({
+          status: 'error',
+          info: 'daily limit',
+          code: 'DAILY_LIMIT',
+          limit: q.limit,
+          remaining: 0,
+          day: q.day,
+        }),
+      )
       return
+    }
+    if (q.limit > 0) {
+      res.setHeader('x-match-quota-limit', String(q.limit))
+      res.setHeader('x-match-quota-remaining', String(q.remaining))
     }
     next()
   }
@@ -156,7 +152,7 @@ export default defineConfig(({ mode }) => {
   const proxy = buildProxy(env)
 
   return {
-    plugins: [vue(), apiGuardPlugin()],
+    plugins: [vue(), apiGuardPlugin(env)],
     envPrefix: ['VITE_'],
     test: {
       environment: 'node',

@@ -8,7 +8,6 @@ export function isDev() {
 
 export function devLog(...args) {
   if (!isDev()) return
-  // eslint-disable-next-line no-console
   console.info('[match]', ...args)
 }
 
