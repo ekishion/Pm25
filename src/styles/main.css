@@ -1,16 +1,23 @@
 :root {
-  --bg: #ffffff;
-  --text: #111111;
-  --text-soft: #8a8a8a;
-  --text-faint: #b5b5b5;
-  --line: rgba(0, 0, 0, 0.06);
+  --bg: #fbfaf8;
+  --bg-pure: #ffffff;
+  --text: #141414;
+  --text-soft: #7a7a7a;
+  --text-faint: #a8a8a8;
+  --line: rgba(0, 0, 0, 0.08);
+  --line-soft: rgba(0, 0, 0, 0.05);
   --flame: #ff6a1a;
   --flame-soft: #ffb15a;
   --wood: #c4a07a;
   --wood-deep: #8b6240;
   --head: #2a1c14;
+  /* 编辑排版：系统栈，无外链字体 */
   --font: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-editorial: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Songti SC',
+    'STSong', 'Noto Serif SC', Georgia, serif;
+  --font-display: system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue',
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
   --mono: ui-monospace, 'Cascadia Mono', 'SF Mono', 'Segoe UI Mono', Menlo, Consolas,
     monospace;
   --safe-top: env(safe-area-inset-top, 0px);
@@ -50,6 +57,19 @@ body {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+}
+
+/* 纸感微噪：消除纯白塑料感，保持极轻 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
 }
 
 button,

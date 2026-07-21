@@ -99,9 +99,15 @@ export function useMatchStage(deps) {
     return ''
   })
 
-  function startCountUp(to) {
+  /**
+   * 数字 count-up：与 UI blur-in 镜头对焦同步（约 1.6s）
+   * @param {number} to
+   * @param {{ duration?: number }} [opts]
+   */
+  function startCountUp(to, opts = {}) {
     cancelCountAnim?.()
     const target = Number(to)
+    const duration = opts.duration ?? 1600
     if (!Number.isFinite(target)) {
       animatedCount.value = 0
       countReady.value = true
@@ -112,7 +118,7 @@ export function useMatchStage(deps) {
     cancelCountAnim = animateNumber({
       from: 0,
       to: target,
-      duration: 1500,
+      duration,
       onUpdate: (v) => {
         if (!alive) return
         animatedCount.value = v

@@ -76,6 +76,7 @@ const {
   loading,
   error,
   air,
+  location,
   offline,
   quotaExceeded,
   quotaLimit,
@@ -127,6 +128,7 @@ useAudioGesture()
 const appStyle = computed(() => ({
   ...dayStyle.value,
   ...wxStyle.value,
+  '--intensity': String(matchInfo.value?.burnIntensity ?? 0.2),
 }))
 
 const quotaHintLine = computed(() => {
@@ -151,7 +153,35 @@ const sharePayload = computed(() => ({
   unit: t('unit'),
   modeLabel: subtitle.value,
   foot: t('foot'),
+  lat: location.value?.lat ?? null,
+  lon: location.value?.lon ?? null,
+  issue: issueStamp.value,
 }))
+
+/** 杂志刊号角标：MATCH · VOL. 年 + 日序 */
+const issueStamp = computed(() => {
+  void localeTick.value
+  const d = new Date()
+  const start = new Date(d.getFullYear(), 0, 0)
+  const day = Math.floor((d - start) / 86400000)
+  const vol = String(day).padStart(3, '0')
+  return `MATCH · VOL. ${d.getFullYear()} · NO. ${vol}`
+})
+
+/** 经纬度纪实角标 */
+const coordStamp = computed(() => {
+  const lat = Number(location.value?.lat)
+  const lon = Number(location.value?.lon)
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return ''
+  const ns = lat >= 0 ? 'N' : 'S'
+  const ew = lon >= 0 ? 'E' : 'W'
+  return `${Math.abs(lat).toFixed(2)}° ${ns}  ·  ${Math.abs(lon).toFixed(2)}° ${ew}`
+})
+
+const overlineLabel = computed(() => {
+  void localeTick.value
+  return t('editorialOverline')
+})
 
 async function softRefresh() {
   await softRefreshAir({
@@ -361,8 +391,17 @@ onUnmounted(() => {
   >
     <div class="warm-flash" aria-hidden="true" />
     <div class="day-veil" aria-hidden="true" />
+    <div class="ember-glow" aria-hidden="true" />
 
     <div class="sr-only" aria-live="polite" aria-atomic="true">{{ liveMessage }}</div>
+
+    <!-- 杂志角标：仅四角 + 与顶栏错开的刊号 -->
+    <div class="pub-marks" aria-hidden="true">
+      <span class="pub-cross tl">+</span>
+      <span class="pub-cross tr">+</span>
+      <span class="pub-cross bl">+</span>
+      <span class="pub-cross br">+</span>
+    </div>
 
     <header class="top">
       <button
@@ -374,6 +413,10 @@ onUnmounted(() => {
       >
         {{ place || ' ' }}
       </button>
+
+      <p class="pub-issue" :class="{ show: entered && !splashMounted }" aria-hidden="true">
+        {{ issueStamp }}
+      </p>
 
       <div class="top-actions">
         <button
@@ -457,45 +500,68 @@ onUnmounted(() => {
         <span>{{ loading ? t('loading') : t('ignite') }}</span>
       </button>
 
-      <div class="readout" :class="{ show: showReadout || stage === 'failed' || quotaExceeded }">
+      <div
+        class="readout"
+        :class="{
+          show: showReadout || stage === 'failed' || quotaExceeded,
+          reveal: showReadout && stage === 'burning' && !quotaExceeded,
+        }"
+      >
+        <p v-if="stage === 'burning' && !quotaExceeded" class="overline">{{ overlineLabel }}</p>
         <div class="count">
           <span class="num" :class="{ muted: quotaExceeded }">{{ displayCount }}</span>
           <span class="unit">{{ t('unit') }}</span>
         </div>
+        <div
+          v-if="stage === 'burning' && subtitle && !quotaExceeded"
+          class="mode-line"
+          :class="{ warn: matchInfo.offScale }"
+        >
+          {{ subtitle }}
+        </div>
+        <div class="hairline" aria-hidden="true" />
         <div class="meta">
           <span v-if="quotaExceeded">{{ t('quotaTitle') }}</span>
           <span v-else-if="stage === 'failed'">{{ t('failHint') }}</span>
           <template v-else>
             <span v-if="air?.pm25 != null">PM2.5 {{ Math.round(air.pm25) }}</span>
-            <span v-else-if="air?.aqi != null">AQI {{ air.aqi }}</span>
-            <span
-              v-if="air?.pm25 != null && air?.aqi != null"
-              class="sep"
-            >AQI {{ air.aqi }}</span>
-            <span v-if="subtitle" class="sep" :class="{ warn: matchInfo.offScale }">{{ subtitle }}</span>
+            <span v-if="air?.aqi != null" :class="{ sep: air?.pm25 != null }">AQI {{ air.aqi }}</span>
           </template>
         </div>
+        <!-- 次要信息只保留一行，避免堆叠 -->
         <div v-if="quotaExceeded" class="submeta">{{ quotaHintLine }}</div>
         <div v-else-if="matchInfo.offScale && stage === 'burning'" class="submeta warn">
           {{ t('offScaleHint') }}
         </div>
-        <div v-if="updatedLine && stage === 'burning' && !quotaExceeded" class="submeta">{{ updatedLine }}</div>
-        <div v-if="historyLine && stage === 'burning' && !quotaExceeded" class="submeta">{{ historyLine }}</div>
-        <div v-if="offline && !quotaExceeded" class="submeta">{{ t('offline') }}</div>
+        <div v-else-if="historyLine && stage === 'burning'" class="submeta">{{ historyLine }}</div>
+        <div v-else-if="updatedLine && stage === 'burning'" class="submeta">{{ updatedLine }}</div>
+        <div v-else-if="offline" class="submeta">{{ t('offline') }}</div>
       </div>
     </main>
 
-    <footer class="foot" :class="{ show: showFoot || !!shareHint || guideOn || quotaExceeded }">
-      {{
-        shareHint ||
-        (quotaExceeded
-          ? t('quotaFoot')
-          : guideOn
-            ? t('guide')
-            : stage === 'failed'
-              ? t('failHint')
-              : t('foot'))
-      }}
+    <footer class="bottom-zone">
+      <p
+        class="foot"
+        :class="{ show: showFoot || !!shareHint || guideOn || quotaExceeded }"
+      >
+        {{
+          shareHint ||
+          (quotaExceeded
+            ? t('quotaFoot')
+            : guideOn
+              ? t('guide')
+              : stage === 'failed'
+                ? t('failHint')
+                : t('foot'))
+        }}
+      </p>
+      <p
+        class="pub-coords"
+        :class="{ show: entered && !!coordStamp && !splashMounted && !(showFoot || shareHint || guideOn) }"
+        aria-hidden="true"
+      >
+        {{ coordStamp }}
+      </p>
     </footer>
 
     <ShareSheet
@@ -514,15 +580,15 @@ onUnmounted(() => {
   min-height: 100dvh;
   max-width: 100vw;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   padding:
-    calc(18px + var(--safe-top))
+    calc(14px + var(--safe-top))
     calc(18px + var(--safe-right))
-    calc(24px + var(--safe-bottom))
+    calc(14px + var(--safe-bottom))
     calc(18px + var(--safe-left));
-  background: #fff;
-  color: #111;
-  overflow-x: clip;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
   opacity: 0;
   transform: translateY(8px);
   transition:
@@ -549,6 +615,31 @@ onUnmounted(() => {
   background: rgba(255, 170, 90, var(--day-warm, 0));
 }
 
+.ember-glow {
+  pointer-events: none;
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  z-index: 0;
+  width: min(640px, 80vw);
+  height: min(360px, 40vh);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 106, 26, calc(0.04 + var(--intensity, 0.2) * 0.05)) 0%,
+    transparent 72%
+  );
+  filter: blur(10px);
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+
+.app.burning .ember-glow,
+.app.failed .ember-glow {
+  opacity: 1;
+}
+
 .warm-flash {
   pointer-events: none;
   position: fixed;
@@ -563,29 +654,67 @@ onUnmounted(() => {
   opacity: 1;
 }
 
+/* 四角十字：不占文档流 */
+.pub-marks {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.pub-cross {
+  position: absolute;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: rgba(0, 0, 0, 0.12);
+  line-height: 1;
+}
+
+.pub-cross.tl {
+  top: 8px;
+  left: 8px;
+}
+
+.pub-cross.tr {
+  top: 8px;
+  right: 8px;
+}
+
+.pub-cross.bl {
+  bottom: 8px;
+  left: 8px;
+}
+
+.pub-cross.br {
+  bottom: 8px;
+  right: 8px;
+}
+
 .top {
   position: relative;
   z-index: 2;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  column-gap: 10px;
   min-width: 0;
   height: 44px;
   max-width: 100%;
 }
 
 .place {
-  flex: 0 1 auto;
+  justify-self: start;
   min-width: 0;
-  max-width: min(46vw, 180px);
+  max-width: 100%;
   height: 44px;
-  padding: 0 4px 0 0;
+  padding: 0;
   display: inline-block;
-  width: fit-content;
-  font-size: 0.92rem;
+  font-family: var(--font-editorial);
+  font-size: 0.98rem;
   font-weight: 500;
-  letter-spacing: 0.02em;
+  font-style: italic;
+  letter-spacing: 0.03em;
   color: var(--text-soft);
   white-space: nowrap;
   overflow: hidden;
@@ -600,8 +729,29 @@ onUnmounted(() => {
   opacity: 1;
 }
 
+.pub-issue {
+  margin: 0;
+  justify-self: center;
+  max-width: min(42vw, 280px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.2);
+  opacity: 0;
+  transition: opacity 0.8s ease 0.15s;
+}
+
+.pub-issue.show {
+  opacity: 1;
+}
+
 .top-actions {
-  flex: 0 0 auto;
+  justify-self: end;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -672,19 +822,21 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: clamp(8px, 1.4vh, 18px);
+  gap: clamp(6px, 1.2vh, 14px);
   min-width: 0;
   min-height: 0;
   max-width: 100%;
-  padding: 4px 0 0;
-  overflow: visible;
+  padding: 0 0 4px;
+  overflow: hidden;
 }
 
 .scene-wrap {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  overflow: visible;
+  flex: 0 1 auto;
+  max-height: min(52vh, 420px);
+  overflow: hidden;
   transform: translateY(6px) scale(0.975);
   opacity: 0.92;
   filter: hue-rotate(calc((var(--flame-hue, 1) - 1) * 18deg))
@@ -700,30 +852,36 @@ onUnmounted(() => {
 }
 
 .ignite {
-  position: absolute;
-  bottom: max(6%, 18px);
+  position: relative;
+  margin-top: 4px;
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 28px;
+  padding: 14px 30px;
   border-radius: 999px;
-  border: 1px solid var(--line);
-  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.72);
   color: #111;
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   font-weight: 500;
-  letter-spacing: 0.28em;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.045);
+  letter-spacing: 0.32em;
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.04),
+    0 0 0 1px rgba(255, 255, 255, 0.6) inset;
   transition:
     transform 0.2s ease,
-    box-shadow 0.2s ease,
+    box-shadow 0.25s ease,
     opacity 0.35s ease;
   animation: ignite-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.25s both;
 }
 
 .ignite:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.07);
+  box-shadow:
+    0 16px 44px rgba(255, 106, 26, 0.1),
+    0 0 0 1px rgba(255, 255, 255, 0.7) inset;
 }
 
 .ignite:active:not(:disabled) {
@@ -751,49 +909,125 @@ onUnmounted(() => {
 }
 
 .readout {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  width: min(100%, 420px);
   text-align: center;
-  margin-top: -6px;
+  margin-top: 0;
   opacity: 0;
   transform: translateY(14px);
-  filter: blur(6px);
-  transition:
-    opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.9s cubic-bezier(0.22, 1, 0.36, 1),
-    filter 0.9s cubic-bezier(0.22, 1, 0.36, 1);
   pointer-events: none;
 }
 
-.readout.show {
+/* 失败/额度：轻显，无镜头对焦 */
+.readout.show:not(.reveal) {
   opacity: 1;
-  transform: translateY(-6px);
-  filter: blur(0);
+  transform: none;
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+/*
+ * 点燃揭晓：镜头对焦
+ * - 整块 readout 入场
+ * - .num 从 blur(14px) 聚焦到 0，与 count-up 约 1.6s 同步
+ */
+.readout.reveal {
+  opacity: 1;
+  transform: none;
+  animation: readout-enter 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.readout.reveal .overline {
+  animation: reveal-fade 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.05s both;
+}
+
+.readout.reveal .num {
+  animation: numeral-focus 1.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.readout.reveal .unit {
+  animation: reveal-fade 0.85s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both;
+}
+
+.readout.reveal .mode-line {
+  animation: reveal-fade 0.85s cubic-bezier(0.22, 1, 0.36, 1) 0.35s both;
+}
+
+.readout.reveal .hairline {
+  animation: hairline-draw 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.45s both;
+}
+
+.readout.reveal .meta {
+  animation: reveal-fade 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.55s both;
+}
+
+.readout.reveal .submeta {
+  animation: reveal-fade 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.7s both;
+}
+
+.overline {
+  margin: 0 0 8px;
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
 
 .count {
   display: flex;
   align-items: baseline;
   justify-content: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .num {
-  font-family: var(--mono);
-  font-size: clamp(3.4rem, 12vw, 5.4rem);
+  display: inline-block;
+  font-family: var(--font-display);
+  font-size: clamp(3.2rem, 11vw, 5rem);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.05em;
-  line-height: 0.95;
-  color: #111;
+  letter-spacing: -0.06em;
+  line-height: 0.92;
+  color: var(--text);
+  transform-origin: 50% 70%;
+  will-change: filter, transform, opacity;
 }
 
 .num.muted {
   color: #bbb;
+  animation: none !important;
+  filter: none !important;
 }
 
 .unit {
-  font-size: 1.05rem;
+  font-size: 0.9rem;
   color: var(--text-soft);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
+}
+
+.mode-line {
+  margin-top: 6px;
+  font-family: var(--font-editorial);
+  font-size: 1.05rem;
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  color: rgba(20, 20, 20, 0.5);
+}
+
+.mode-line.warn {
+  color: #c45a2a;
+}
+
+.hairline {
+  width: min(88px, 24vw);
+  height: 1px;
+  margin: 12px auto 0;
+  background: var(--line-soft);
+  transform-origin: 50% 50%;
 }
 
 .meta,
@@ -802,38 +1036,91 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 10px 14px;
+  gap: 8px 12px;
   color: var(--text-faint);
-  font-size: 0.86rem;
-  letter-spacing: 0.1em;
-}
-
-.meta {
-  opacity: 0;
-  transform: translateY(6px);
-  transition:
-    opacity 0.7s ease 0.35s,
-    transform 0.7s ease 0.35s;
-}
-
-.readout.show .meta {
-  opacity: 1;
-  transform: none;
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .submeta {
   margin-top: 6px;
-  font-size: 0.78rem;
-  opacity: 0.9;
+  min-height: 1.1em;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: none;
+  opacity: 0.88;
+}
+
+@keyframes readout-enter {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 镜头对焦：强模糊 → 清晰，轻微放大回落 */
+@keyframes numeral-focus {
+  0% {
+    opacity: 0.15;
+    filter: blur(14px);
+    transform: scale(1.08);
+    letter-spacing: 0.04em;
+  }
+  35% {
+    opacity: 0.75;
+    filter: blur(6px);
+    transform: scale(1.03);
+    letter-spacing: -0.02em;
+  }
+  70% {
+    opacity: 1;
+    filter: blur(1.5px);
+    transform: scale(1.01);
+    letter-spacing: -0.05em;
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+    letter-spacing: -0.06em;
+  }
+}
+
+@keyframes reveal-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+@keyframes hairline-draw {
+  from {
+    opacity: 0;
+    transform: scaleX(0.2);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
 }
 
 .meta .sep::before {
   content: '·';
-  margin-right: 14px;
+  margin-right: 12px;
   color: #ddd;
 }
 
-.meta .sep.warn,
 .submeta.warn {
   color: #c45a2a;
 }
@@ -847,25 +1134,53 @@ onUnmounted(() => {
   letter-spacing: -0.04em;
 }
 
-.foot {
+/* 底部独立安全区：脚注与坐标互斥，不再与 readout 重叠 */
+.bottom-zone {
   position: relative;
-  z-index: 1;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  min-height: 2.6em;
+  padding-top: 4px;
   text-align: center;
-  font-size: 0.8rem;
-  letter-spacing: 0.2em;
+}
+
+.foot {
+  margin: 0;
+  max-width: min(92vw, 420px);
+  font-family: var(--font-editorial);
+  font-size: 0.82rem;
+  font-style: italic;
+  letter-spacing: 0.1em;
   color: var(--text-faint);
   opacity: 0;
   transform: translateY(4px);
   transition:
-    opacity 1s ease,
-    transform 1s ease;
-  min-height: 1.2em;
-  margin-bottom: 8px;
+    opacity 0.7s ease,
+    transform 0.7s ease;
+  line-height: 1.35;
 }
 
 .foot.show {
   opacity: 1;
   transform: none;
+}
+
+.pub-coords {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.2);
+  opacity: 0;
+  transition: opacity 0.7s ease;
+}
+
+.pub-coords.show {
+  opacity: 1;
 }
 
 @keyframes ignite-in {
@@ -904,9 +1219,14 @@ onUnmounted(() => {
   }
 
   .place {
-    max-width: min(42vw, 140px);
     line-height: 40px;
     font-size: 0.88rem;
+  }
+
+  .pub-issue {
+    max-width: min(36vw, 160px);
+    font-size: 0.5rem;
+    letter-spacing: 0.08em;
   }
 
   .icon-btn {
@@ -922,6 +1242,18 @@ onUnmounted(() => {
     padding: 13px 24px;
     letter-spacing: 0.22em;
   }
+
+  .scene-wrap {
+    max-height: min(44vh, 340px);
+  }
+
+  .num {
+    font-size: clamp(2.8rem, 12vw, 3.8rem);
+  }
+
+  .mode-line {
+    font-size: 0.98rem;
+  }
 }
 
 @media (min-width: 960px) {
@@ -931,7 +1263,11 @@ onUnmounted(() => {
   }
 
   .num {
-    font-size: clamp(4.2rem, 7vw, 5.8rem);
+    font-size: clamp(3.8rem, 6vw, 5rem);
+  }
+
+  .scene-wrap {
+    max-height: min(54vh, 460px);
   }
 }
 
@@ -940,6 +1276,14 @@ onUnmounted(() => {
   .scene-wrap,
   .place,
   .readout,
+  .readout.reveal,
+  .readout.reveal .num,
+  .readout.reveal .overline,
+  .readout.reveal .unit,
+  .readout.reveal .mode-line,
+  .readout.reveal .hairline,
+  .readout.reveal .meta,
+  .readout.reveal .submeta,
   .meta,
   .foot,
   .ignite,
@@ -954,8 +1298,17 @@ onUnmounted(() => {
     transform: none;
   }
 
-  .readout.show {
+  .readout.show,
+  .readout.reveal {
+    opacity: 1;
+    transform: none;
     filter: none;
+  }
+
+  .readout.reveal .num {
+    filter: none;
+    transform: none;
+    opacity: 1;
   }
 }
 </style>

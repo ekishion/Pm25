@@ -53,6 +53,7 @@ const dict = {
     splashWeather: '读取环境…',
     splashPlace: '解析地名…',
     splashDone: '就绪',
+    editorialOverline: 'AIR · MATCH EQUIVALENT',
   },
   en: {
     brand: 'Match',
@@ -104,6 +105,7 @@ const dict = {
     splashWeather: 'reading weather…',
     splashPlace: 'resolving place…',
     splashDone: 'ready',
+    editorialOverline: 'AIR · MATCH EQUIVALENT',
   },
 }
 
