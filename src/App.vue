@@ -17,6 +17,7 @@ import { useTimers } from './composables/useTimers'
 import { useAirQuality } from './composables/useAirQuality'
 import { useMatchStage } from './composables/useMatchStage'
 import { useAudioGesture } from './composables/useAudioGesture'
+import { usePrivacy } from './composables/usePrivacy'
 
 /** 开屏最长等待（毫秒）：网络挂起时仍进入主界面 */
 const SPLASH_MAX_MS = 12_000
@@ -29,6 +30,8 @@ const guideOn = ref(false)
 const entered = ref(false)
 const soundOn = ref(true)
 const dayStyle = ref(daypartStyle())
+
+const { privacyOn, loadPrivacyPreference, togglePrivacy } = usePrivacy()
 
 /** boot | ready | leaving */
 const splashPhase = ref('boot')
@@ -142,8 +145,15 @@ const updatedLine = computed(() => {
   return formatUpdatedLine(air.value.updatedAt)
 })
 
+/** UI 展示用城市：隐私模式不显示真实地名 */
+const displayPlace = computed(() => {
+  void localeTick.value
+  if (privacyOn.value) return t('privacyPlace')
+  return place.value
+})
+
 const sharePayload = computed(() => ({
-  place: place.value,
+  place: privacyOn.value ? '' : place.value,
   matchCount: matchInfo.value.matchesPerHour,
   pm25: air.value?.pm25 ?? null,
   aqi: air.value?.aqi ?? null,
@@ -153,9 +163,11 @@ const sharePayload = computed(() => ({
   unit: t('unit'),
   modeLabel: subtitle.value,
   foot: t('foot'),
-  lat: location.value?.lat ?? null,
-  lon: location.value?.lon ?? null,
+  lat: privacyOn.value ? null : location.value?.lat ?? null,
+  lon: privacyOn.value ? null : location.value?.lon ?? null,
   issue: issueStamp.value,
+  privacy: privacyOn.value,
+  hidePlace: privacyOn.value,
 }))
 
 /** 杂志刊号角标：MATCH · VOL. 年 + 日序 */
@@ -168,8 +180,9 @@ const issueStamp = computed(() => {
   return `MATCH · VOL. ${d.getFullYear()} · NO. ${vol}`
 })
 
-/** 经纬度纪实角标 */
+/** 经纬度纪实角标（隐私模式不展示） */
 const coordStamp = computed(() => {
+  if (privacyOn.value) return ''
   const lat = Number(location.value?.lat)
   const lon = Number(location.value?.lon)
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return ''
@@ -193,6 +206,11 @@ async function softRefresh() {
 async function toggleSound() {
   await unlockAudio()
   soundOn.value = setSoundEnabled(!soundOn.value)
+}
+
+function onTogglePrivacy() {
+  const on = togglePrivacy()
+  flashHint(on ? t('privacyHint') : t('privacyShown'))
 }
 
 function toggleLang() {
@@ -321,6 +339,7 @@ onMounted(async () => {
 
   soundOn.value = loadSoundPreference()
   setSoundEnabled(soundOn.value)
+  loadPrivacyPreference()
 
   syncOnlineStatus()
   window.addEventListener('online', onOnline)
@@ -407,11 +426,11 @@ onUnmounted(() => {
       <button
         type="button"
         class="place"
-        :class="{ show: place && entered }"
-        :title="t('refreshed')"
+        :class="{ show: entered && (!!displayPlace || privacyOn), private: privacyOn }"
+        :title="privacyOn ? t('privacyHint') : t('refreshed')"
         @click="softRefresh"
       >
-        {{ place || ' ' }}
+        {{ displayPlace || ' ' }}
       </button>
 
       <p class="pub-issue" :class="{ show: entered && !splashMounted }" aria-hidden="true">
@@ -419,6 +438,35 @@ onUnmounted(() => {
       </p>
 
       <div class="top-actions">
+        <button
+          class="icon-btn visible"
+          type="button"
+          :aria-pressed="privacyOn"
+          :aria-label="privacyOn ? t('privacyOn') : t('privacyOff')"
+          :title="privacyOn ? t('privacyOn') : t('privacyOff')"
+          @click="onTogglePrivacy"
+        >
+          <!-- 隐私：斜线眼睛 / 睁眼 -->
+          <svg v-if="privacyOn" viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+            <path
+              d="M4 4l16 16M9.9 9.9A3 3 0 0012 15a3 3 0 002.1-.9M10.6 6.3A9.8 9.8 0 0112 6c5 0 9 4 10 6-.4.8-1.2 2-2.5 3.2M6.2 6.2C4.4 7.5 3.2 9.1 2 12c1 2 5 6 10 6 1.2 0 2.3-.2 3.3-.6"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <svg v-else viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+            <path
+              d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6-10-6-10-6z"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linejoin="round"
+            />
+            <circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.6" />
+          </svg>
+        </button>
+
         <button
           class="icon-btn"
           type="button"
@@ -567,6 +615,7 @@ onUnmounted(() => {
     <ShareSheet
       :open="shareOpen"
       :payload="sharePayload"
+      :privacy="privacyOn"
       @close="shareOpen = false"
       @done="onShareDone"
     />
@@ -727,6 +776,12 @@ onUnmounted(() => {
 
 .place.show {
   opacity: 1;
+}
+
+.place.private {
+  letter-spacing: 0.12em;
+  font-style: normal;
+  color: var(--text-faint);
 }
 
 .pub-issue {

@@ -19,6 +19,8 @@ export async function renderShareCard(data) {
     intensity = 0.35,
     ratio = 'portrait', // portrait | square
     hidePlace = false,
+    /** 隐私模式：隐藏城市 + 坐标（等同 hidePlace + 无 lat/lon） */
+    privacy = false,
     brand = '火柴',
     unit = '根 / 时',
     modeLabel = '',
@@ -27,6 +29,9 @@ export async function renderShareCard(data) {
     lon = null,
     issue = '',
   } = data
+
+  const showPlace = Boolean(place) && !hidePlace && !privacy
+  const showCoords = !privacy && !hidePlace
 
   const W = 1080
   const H = ratio === 'square' ? 1080 : 1440
@@ -94,7 +99,7 @@ export async function renderShareCard(data) {
   // 顶部：城市 / 品牌
   const topY = padY + 48
   ctx.textBaseline = 'middle'
-  if (place && !hidePlace) {
+  if (showPlace) {
     ctx.textAlign = 'left'
     ctx.fillStyle = '#6e6e6e'
     ctx.font = `italic 500 36px ${serif}`
@@ -160,10 +165,10 @@ export async function renderShareCard(data) {
   ctx.textAlign = 'center'
   if (meta.length) ctx.fillText(meta.join('   ·   '), cx, numY + (modeLabel ? 92 : 52))
 
-  // 坐标
+  // 坐标（隐私模式不绘制）
   const la = Number(lat)
   const lo = Number(lon)
-  if (Number.isFinite(la) && Number.isFinite(lo)) {
+  if (showCoords && Number.isFinite(la) && Number.isFinite(lo)) {
     const ns = la >= 0 ? 'N' : 'S'
     const ew = lo >= 0 ? 'E' : 'W'
     const coord = `${Math.abs(la).toFixed(2)}° ${ns}  ·  ${Math.abs(lo).toFixed(2)}° ${ew}`
@@ -228,18 +233,22 @@ export async function blobFromCard(data) {
 
 export async function shareOrDownloadCard(data) {
   const blob = await blobFromCard(data)
-  const safePlace = String(data.place || 'air')
-    .replace(/[^\w一-龥-]+/g, '')
-    .slice(0, 24)
+  const privateShare = Boolean(data.privacy || data.hidePlace)
+  const safePlace = privateShare
+    ? 'air'
+    : String(data.place || 'air')
+        .replace(/[^\w一-龥-]+/g, '')
+        .slice(0, 24)
   const filename = `match-${safePlace || 'air'}.png`
   const file = new File([blob], filename, { type: 'image/png' })
 
   try {
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      const placeBit = privateShare ? '' : data.place || ''
       await navigator.share({
         files: [file],
         title: data.brand || 'Match',
-        text: `${data.hidePlace ? '' : data.place || ''} ${formatMatchCount(data.matchCount)} ${data.unit || ''}`.trim(),
+        text: `${placeBit} ${formatMatchCount(data.matchCount)} ${data.unit || ''}`.trim(),
       })
       return { method: 'share' }
     }

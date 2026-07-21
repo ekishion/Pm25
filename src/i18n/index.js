@@ -54,6 +54,11 @@ const dict = {
     splashPlace: '解析地名…',
     splashDone: '就绪',
     editorialOverline: 'AIR · MATCH EQUIVALENT',
+    privacyOn: '关闭隐私模式',
+    privacyOff: '开启隐私模式',
+    privacyPlace: '此处',
+    privacyHint: '已隐藏位置信息',
+    privacyShown: '已显示位置',
   },
   en: {
     brand: 'Match',
@@ -106,6 +111,11 @@ const dict = {
     splashPlace: 'resolving place…',
     splashDone: 'ready',
     editorialOverline: 'AIR · MATCH EQUIVALENT',
+    privacyOn: 'Disable privacy mode',
+    privacyOff: 'Enable privacy mode',
+    privacyPlace: 'here',
+    privacyHint: 'location hidden',
+    privacyShown: 'location visible',
   },
 }
 

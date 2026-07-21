@@ -6,6 +6,8 @@ import { renderShareCard, canvasToBlob, shareOrDownloadCard } from '../utils/sha
 const props = defineProps({
   open: { type: Boolean, default: false },
   payload: { type: Object, default: () => ({}) },
+  /** 全局隐私模式：默认隐藏位置，并锁定分享脱敏 */
+  privacy: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close', 'done'])
@@ -17,6 +19,8 @@ const busy = ref(false)
 
 const canSystemShare = computed(() => typeof navigator !== 'undefined' && typeof navigator.share === 'function')
 
+const effectiveHidePlace = computed(() => props.privacy || hidePlace.value)
+
 async function rebuild() {
   if (!props.open) return
   busy.value = true
@@ -24,7 +28,12 @@ async function rebuild() {
     const canvas = await renderShareCard({
       ...props.payload,
       ratio: ratio.value,
-      hidePlace: hidePlace.value,
+      hidePlace: effectiveHidePlace.value,
+      privacy: props.privacy,
+      // 隐私模式下不把坐标塞进画布
+      lat: props.privacy ? null : props.payload?.lat,
+      lon: props.privacy ? null : props.payload?.lon,
+      place: props.privacy ? '' : props.payload?.place,
     })
     const blob = await canvasToBlob(canvas)
     canvas.width = 0
@@ -39,7 +48,14 @@ async function rebuild() {
 }
 
 watch(
-  () => [props.open, ratio.value, hidePlace.value, props.payload],
+  () => [props.open, props.privacy],
+  ([open, privacy]) => {
+    if (open && privacy) hidePlace.value = true
+  },
+)
+
+watch(
+  () => [props.open, ratio.value, hidePlace.value, props.privacy, props.payload],
   () => {
     if (props.open) rebuild()
   },
@@ -56,7 +72,11 @@ async function save() {
     const result = await shareOrDownloadCard({
       ...props.payload,
       ratio: ratio.value,
-      hidePlace: hidePlace.value,
+      hidePlace: effectiveHidePlace.value,
+      privacy: props.privacy,
+      lat: props.privacy ? null : props.payload?.lat,
+      lon: props.privacy ? null : props.payload?.lon,
+      place: props.privacy ? '' : props.payload?.place,
     })
     emit('done', result.method)
     if (result.method !== 'cancelled') emit('close')
@@ -94,9 +114,16 @@ function onBackdrop(e) {
             {{ t('shareSquare') }}
           </button>
         </div>
-        <button type="button" class="toggle" :aria-pressed="hidePlace" @click="hidePlace = !hidePlace">
-          {{ hidePlace ? t('includePlace') : t('hidePlace') }}
+        <button
+          type="button"
+          class="toggle"
+          :aria-pressed="effectiveHidePlace"
+          :disabled="privacy"
+          @click="hidePlace = !hidePlace"
+        >
+          {{ effectiveHidePlace ? t('includePlace') : t('hidePlace') }}
         </button>
+        <p v-if="privacy" class="privacy-note">{{ t('privacyHint') }}</p>
       </div>
 
       <div class="actions">
@@ -228,6 +255,19 @@ function onBackdrop(e) {
 .toggle[aria-pressed='true'] {
   color: #111;
   border-color: rgba(0, 0, 0, 0.12);
+}
+
+.toggle:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.privacy-note {
+  margin: 0;
+  text-align: center;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: #a0a0a0;
 }
 
 .primary {
