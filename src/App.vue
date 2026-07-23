@@ -1,8 +1,11 @@
-<script setup>
+﻿<script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import MatchScene from './components/MatchScene.vue'
 import ShareSheet from './components/ShareSheet.vue'
 import SplashScreen from './components/SplashScreen.vue'
+import ParticleCanvas from './components/ParticleCanvas.vue'
+import CustomCursor from './components/CustomCursor.vue'
+import { EyeOff, Eye, Share2, Volume2, VolumeX, Languages } from 'lucide-vue-next'
 import { daypartStyle } from './utils/daypart'
 import { formatUpdatedLine } from './utils/time'
 import { sleep } from './utils/animate'
@@ -274,7 +277,7 @@ async function finishSplash() {
   await sleep(320)
   entered.value = true
   splashPhase.value = 'leaving'
-  await sleep(560)
+  await sleep(920)
   splashMounted.value = false
 
   try {
@@ -388,6 +391,12 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <ParticleCanvas
+    :intensity="matchInfo?.burnIntensity ?? 0.2"
+    :active="entered && !splashMounted"
+  />
+  <CustomCursor :intensity="matchInfo?.burnIntensity ?? 0.2" />
+
   <SplashScreen
     v-if="splashMounted"
     :phase="splashPhase"
@@ -411,6 +420,14 @@ onUnmounted(() => {
     <div class="warm-flash" aria-hidden="true" />
     <div class="day-veil" aria-hidden="true" />
     <div class="ember-glow" aria-hidden="true" />
+
+    <!-- 浮动几何装饰 -->
+    <div class="geo-shapes" aria-hidden="true">
+      <span class="geo geo-a" />
+      <span class="geo geo-b" />
+      <span class="geo geo-c" />
+      <span class="geo geo-d" />
+    </div>
 
     <div class="sr-only" aria-live="polite" aria-atomic="true">{{ liveMessage }}</div>
 
@@ -446,35 +463,22 @@ onUnmounted(() => {
           :title="privacyOn ? t('privacyOn') : t('privacyOff')"
           @click="onTogglePrivacy"
         >
-          <!-- 隐私：斜线眼睛 / 睁眼 -->
-          <svg v-if="privacyOn" viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
-            <path
-              d="M4 4l16 16M9.9 9.9A3 3 0 0012 15a3 3 0 002.1-.9M10.6 6.3A9.8 9.8 0 0112 6c5 0 9 4 10 6-.4.8-1.2 2-2.5 3.2M6.2 6.2C4.4 7.5 3.2 9.1 2 12c1 2 5 6 10 6 1.2 0 2.3-.2 3.3-.6"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-          <svg v-else viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
-            <path
-              d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6-10-6-10-6z"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linejoin="round"
-            />
-            <circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.6" />
-          </svg>
+          <!-- 隐私：Lucide 图标 -->
+          <EyeOff v-if="privacyOn" :size="18" :stroke-width="1.6" aria-hidden="true" />
+          <Eye v-else :size="18" :stroke-width="1.6" aria-hidden="true" />
         </button>
 
         <button
-          class="icon-btn"
+          class="icon-btn lang-btn"
           type="button"
           :class="{ visible: true }"
           :aria-label="getLocale() === 'zh' ? 'English' : '中文'"
           @click="toggleLang"
         >
-          <span class="lang">{{ getLocale() === 'zh' ? 'EN' : '中' }}</span>
+          <span class="lang-switch" aria-hidden="true">
+            <Languages :size="15" :stroke-width="1.6" />
+            <span class="lang">{{ getLocale() === 'zh' ? 'EN' : '中' }}</span>
+          </span>
         </button>
 
         <button
@@ -487,17 +491,7 @@ onUnmounted(() => {
           :aria-label="t('share')"
           @click="openShare"
         >
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
-            <circle cx="7" cy="12" r="2.15" stroke="currentColor" stroke-width="1.6" />
-            <circle cx="17" cy="7" r="2.15" stroke="currentColor" stroke-width="1.6" />
-            <circle cx="17" cy="17" r="2.15" stroke="currentColor" stroke-width="1.6" />
-            <path
-              d="M9.1 11.1l5.8-3.2M9.1 12.9l5.8 3.2"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-            />
-          </svg>
+          <Share2 :size="20" :stroke-width="1.6" aria-hidden="true" />
         </button>
 
         <button
@@ -507,15 +501,8 @@ onUnmounted(() => {
           :aria-label="soundOn ? t('soundOn') : t('soundOff')"
           @click="toggleSound"
         >
-          <svg v-if="soundOn" viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
-            <path d="M4 10v4h3l4 3V7L7 10H4z" fill="currentColor" />
-            <path d="M15 9.5c1.2 1 1.2 4 0 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-            <path d="M17.5 7c2.2 2 2.2 8 0 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          </svg>
-          <svg v-else viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
-            <path d="M4 10v4h3l4 3V7L7 10H4z" fill="currentColor" />
-            <path d="M16 10l4 4M20 10l-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          </svg>
+          <Volume2 v-if="soundOn" :size="20" :stroke-width="1.6" aria-hidden="true" />
+          <VolumeX v-else :size="20" :stroke-width="1.6" aria-hidden="true" />
         </button>
       </div>
     </header>
@@ -639,15 +626,18 @@ onUnmounted(() => {
   color: var(--text);
   overflow: hidden;
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(12px) scale(0.98);
+  filter: blur(4px);
   transition:
-    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    opacity 1s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 1s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 1.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .app.entered {
   opacity: 1;
   transform: none;
+  filter: blur(0);
 }
 
 .app.behind-splash {
@@ -687,6 +677,62 @@ onUnmounted(() => {
 .app.burning .ember-glow,
 .app.failed .ember-glow {
   opacity: 1;
+}
+
+/* 浮动几何装饰 */
+.geo-shapes {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.geo {
+  position: absolute;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  border-radius: 2px;
+}
+
+.geo-a {
+  top: 12%;
+  right: 8%;
+  width: 28px;
+  height: 28px;
+  transform: rotate(45deg);
+  animation: float-drift 18s ease-in-out infinite;
+}
+
+.geo-b {
+  bottom: 18%;
+  left: 6%;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  animation: float-drift-alt 22s ease-in-out infinite;
+  animation-delay: -4s;
+}
+
+.geo-c {
+  top: 38%;
+  left: 4%;
+  width: 36px;
+  height: 1px;
+  border: none;
+  background: rgba(0, 0, 0, 0.04);
+  animation: float-drift 26s ease-in-out infinite;
+  animation-delay: -8s;
+}
+
+.geo-d {
+  bottom: 32%;
+  right: 5%;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border-color: rgba(255, 106, 26, 0.06);
+  animation: float-drift-alt 20s ease-in-out infinite;
+  animation-delay: -12s;
 }
 
 .warm-flash {
@@ -744,15 +790,17 @@ onUnmounted(() => {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr);
   align-items: center;
-  column-gap: 10px;
+  column-gap: 8px;
   min-width: 0;
   height: 44px;
   max-width: 100%;
 }
 
 .place {
+  position: relative;
+  z-index: 2;
   justify-self: start;
   min-width: 0;
   max-width: 100%;
@@ -785,9 +833,13 @@ onUnmounted(() => {
 }
 
 .pub-issue {
+  pointer-events: none;
+  position: relative;
+  z-index: 0;
   margin: 0;
   justify-self: center;
-  max-width: min(42vw, 280px);
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -806,13 +858,17 @@ onUnmounted(() => {
 }
 
 .top-actions {
+  position: relative;
+  z-index: 2;
   justify-self: end;
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex: 0 0 auto;
   height: 44px;
   gap: 0;
   min-width: 0;
+  padding-left: 12px;
 }
 
 .icon-btn {
@@ -835,7 +891,8 @@ onUnmounted(() => {
     color 0.2s ease,
     background 0.2s ease,
     opacity 0.35s ease,
-    width 0.25s ease;
+    width 0.25s ease,
+    transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .icon-btn:not(.visible) {
@@ -857,17 +914,38 @@ onUnmounted(() => {
 .icon-btn:hover:not(:disabled) {
   color: #111;
   background: rgba(0, 0, 0, 0.04);
+  transform: scale(1.08);
+}
+
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.92);
+  transition-duration: 0.1s;
 }
 
 .icon-btn svg {
   display: block;
 }
 
-.lang {
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+.lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   line-height: 1;
+}
+
+.lang {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.lang-btn {
+  width: auto;
+  min-width: 40px;
+  padding: 0 10px;
+  border-radius: 999px;
+  overflow: visible;
 }
 
 .stage {
@@ -892,18 +970,23 @@ onUnmounted(() => {
   flex: 0 1 auto;
   max-height: min(52vh, 420px);
   overflow: hidden;
-  transform: translateY(6px) scale(0.975);
-  opacity: 0.92;
+  transform: translateY(10px) scale(0.96);
+  opacity: 0;
   filter: hue-rotate(calc((var(--flame-hue, 1) - 1) * 18deg))
-    saturate(var(--flame-sat, 1));
+    saturate(var(--flame-sat, 1))
+    blur(3px);
   transition:
-    transform 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.05s,
-    opacity 0.9s ease 0.05s;
+    transform 1.2s cubic-bezier(0.22, 1, 0.36, 1) 0.1s,
+    opacity 1s ease 0.1s,
+    filter 1.4s ease 0.1s;
 }
 
 .app.entered .scene-wrap {
   transform: none;
   opacity: 1;
+  filter: hue-rotate(calc((var(--flame-hue, 1) - 1) * 18deg))
+    saturate(var(--flame-sat, 1))
+    blur(0);
 }
 
 .ignite {
@@ -914,33 +997,36 @@ onUnmounted(() => {
   gap: 12px;
   padding: 14px 30px;
   border-radius: 999px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.65);
   color: #111;
   font-size: 0.95rem;
   font-weight: 500;
   letter-spacing: 0.32em;
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
   box-shadow:
     0 12px 40px rgba(0, 0, 0, 0.04),
-    0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+    0 0 0 1px rgba(255, 255, 255, 0.5) inset,
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
   transition:
-    transform 0.2s ease,
-    box-shadow 0.25s ease,
+    transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.4s ease,
     opacity 0.35s ease;
   animation: ignite-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.25s both;
 }
 
 .ignite:hover:not(:disabled) {
-  transform: translateY(-1px);
+  transform: translateY(-3px) scale(1.03);
   box-shadow:
-    0 16px 44px rgba(255, 106, 26, 0.1),
-    0 0 0 1px rgba(255, 255, 255, 0.7) inset;
+    0 20px 50px rgba(255, 106, 26, 0.14),
+    0 0 0 1px rgba(255, 255, 255, 0.7) inset,
+    0 0 32px rgba(255, 106, 26, 0.08);
 }
 
 .ignite:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(0.96);
+  transition-duration: 0.12s;
 }
 
 .ignite:disabled {
@@ -1118,41 +1204,57 @@ onUnmounted(() => {
   }
 }
 
-/* 镜头对焦：强模糊 → 清晰，轻微放大回落 */
+/* 镜头对焦：强模糊 → 清晰，放大回弹，中段暖光辉 */
 @keyframes numeral-focus {
   0% {
-    opacity: 0.15;
-    filter: blur(14px);
-    transform: scale(1.08);
-    letter-spacing: 0.04em;
+    opacity: 0.08;
+    filter: blur(22px);
+    transform: scale(1.14);
+    letter-spacing: 0.08em;
+    text-shadow: 0 0 0 transparent;
   }
-  35% {
-    opacity: 0.75;
-    filter: blur(6px);
-    transform: scale(1.03);
-    letter-spacing: -0.02em;
+  25% {
+    opacity: 0.55;
+    filter: blur(10px);
+    transform: scale(1.06);
+    letter-spacing: 0.01em;
+    text-shadow: 0 0 40px rgba(255, 106, 26, 0.15);
   }
-  70% {
+  55% {
+    opacity: 0.92;
+    filter: blur(3px);
+    transform: scale(1.02);
+    letter-spacing: -0.04em;
+    text-shadow: 0 0 24px rgba(255, 106, 26, 0.08);
+  }
+  80% {
     opacity: 1;
-    filter: blur(1.5px);
-    transform: scale(1.01);
-    letter-spacing: -0.05em;
+    filter: blur(0.5px);
+    transform: scale(0.995);
+    letter-spacing: -0.058em;
+    text-shadow: 0 0 0 transparent;
   }
   100% {
     opacity: 1;
     filter: blur(0);
     transform: scale(1);
     letter-spacing: -0.06em;
+    text-shadow: 0 0 0 transparent;
   }
 }
 
 @keyframes reveal-fade {
-  from {
+  0% {
     opacity: 0;
-    transform: translateY(8px);
-    filter: blur(6px);
+    transform: translateY(16px) scale(0.96);
+    filter: blur(8px);
   }
-  to {
+  70% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.01);
+    filter: blur(0);
+  }
+  100% {
     opacity: 1;
     transform: none;
     filter: blur(0);
@@ -1239,13 +1341,20 @@ onUnmounted(() => {
 }
 
 @keyframes ignite-in {
-  from {
+  0% {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(20px) scale(0.92);
+    filter: blur(8px);
   }
-  to {
+  65% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.02);
+    filter: blur(0);
+  }
+  100% {
     opacity: 1;
     transform: none;
+    filter: blur(0);
   }
 }
 
@@ -1258,6 +1367,14 @@ onUnmounted(() => {
   }
   100% {
     box-shadow: 0 0 0 0 rgba(255, 106, 26, 0);
+  }
+}
+
+/* 移动端/窄屏：顶栏刊号易与操作按钮重叠，直接隐藏 */
+/* 平板及以下 / 窄桌面：顶栏刊号直接隐藏，避免与操作区重叠 */
+@media (max-width: 1024px) {
+  .pub-issue {
+    display: none !important;
   }
 }
 
@@ -1276,21 +1393,41 @@ onUnmounted(() => {
   .place {
     line-height: 40px;
     font-size: 0.88rem;
+    padding-right: 10px;
+  }
+
+  .top-actions {
+    padding-left: 10px;
   }
 
   .pub-issue {
-    max-width: min(36vw, 160px);
-    font-size: 0.5rem;
-    letter-spacing: 0.08em;
+    display: none;
   }
 
   .icon-btn {
-    width: 36px;
-    height: 36px;
+    width: 34px;
+    height: 34px;
+  }
+
+  /* 移动端语言按钮只保留 EN/中，省宽度 */
+  .icon-btn.lang-btn {
+    width: 34px;
+    min-width: 34px;
+    padding: 0;
+  }
+
+  .lang-switch svg {
+    display: none;
+  }
+
+  .lang {
+    font-size: 0.72rem;
   }
 
   .icon-btn:not(.visible) {
     width: 0;
+    min-width: 0;
+    padding: 0;
   }
 
   .ignite {
@@ -1343,7 +1480,9 @@ onUnmounted(() => {
   .foot,
   .ignite,
   .warm-flash,
-  .icon-btn {
+  .icon-btn,
+  .geo,
+  .geo-shapes {
     transition: none !important;
     animation: none !important;
   }
@@ -1367,3 +1506,12 @@ onUnmounted(() => {
   }
 }
 </style>
+
+
+
+
+
+
+
+
+

@@ -1,5 +1,6 @@
-<script setup>
+﻿<script setup>
 import { computed, onUnmounted, ref, watch } from 'vue'
+import { X } from 'lucide-vue-next'
 import { t } from '../i18n'
 import { renderShareCard, canvasToBlob, shareOrDownloadCard } from '../utils/shareCard'
 
@@ -93,46 +94,50 @@ function onBackdrop(e) {
 </script>
 
 <template>
-  <div v-if="open" class="sheet" role="dialog" aria-modal="true" :aria-label="t('shareTitle')" @click="onBackdrop">
-    <div class="panel" @click.stop>
-      <header class="head">
-        <h2>{{ t('shareTitle') }}</h2>
-        <button type="button" class="x" :aria-label="t('close')" @click="emit('close')">×</button>
-      </header>
-
-      <div class="preview" :class="{ square: ratio === 'square' }">
-        <img v-if="previewUrl" :src="previewUrl" alt="" />
-        <div v-else class="ph">{{ busy ? t('sharing') : '…' }}</div>
-      </div>
-
-      <div class="opts">
-        <div class="seg">
-          <button type="button" :class="{ on: ratio === 'portrait' }" @click="ratio = 'portrait'">
-            {{ t('sharePortrait') }}
+  <Transition name="modal">
+    <div v-if="open" class="sheet" role="dialog" aria-modal="true" :aria-label="t('shareTitle')" @click="onBackdrop">
+      <div class="panel" @click.stop>
+        <header class="head">
+          <h2>{{ t('shareTitle') }}</h2>
+          <button type="button" class="x" :aria-label="t('close')" @click="emit('close')">
+            <X :size="18" :stroke-width="2" />
           </button>
-          <button type="button" :class="{ on: ratio === 'square' }" @click="ratio = 'square'">
-            {{ t('shareSquare') }}
+        </header>
+
+        <div class="preview" :class="{ square: ratio === 'square' }">
+          <img v-if="previewUrl" :src="previewUrl" alt="" />
+          <div v-else class="ph">{{ busy ? t('sharing') : '…' }}</div>
+        </div>
+
+        <div class="opts">
+          <div class="seg">
+            <button type="button" :class="{ on: ratio === 'portrait' }" @click="ratio = 'portrait'">
+              {{ t('sharePortrait') }}
+            </button>
+            <button type="button" :class="{ on: ratio === 'square' }" @click="ratio = 'square'">
+              {{ t('shareSquare') }}
+            </button>
+          </div>
+          <button
+            type="button"
+            class="toggle"
+            :aria-pressed="effectiveHidePlace"
+            :disabled="privacy"
+            @click="hidePlace = !hidePlace"
+          >
+            {{ effectiveHidePlace ? t('includePlace') : t('hidePlace') }}
+          </button>
+          <p v-if="privacy" class="privacy-note">{{ t('privacyHint') }}</p>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="primary" :disabled="busy" @click="save">
+            {{ canSystemShare ? t('systemShare') : t('save') }}
           </button>
         </div>
-        <button
-          type="button"
-          class="toggle"
-          :aria-pressed="effectiveHidePlace"
-          :disabled="privacy"
-          @click="hidePlace = !hidePlace"
-        >
-          {{ effectiveHidePlace ? t('includePlace') : t('hidePlace') }}
-        </button>
-        <p v-if="privacy" class="privacy-note">{{ t('privacyHint') }}</p>
-      </div>
-
-      <div class="actions">
-        <button type="button" class="primary" :disabled="busy" @click="save">
-          {{ canSystemShare ? t('systemShare') : t('save') }}
-        </button>
       </div>
     </div>
-  </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -143,8 +148,49 @@ function onBackdrop(e) {
   display: grid;
   place-items: end center;
   padding: 16px;
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.48);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+}
+
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 0.35s ease;
+}
+
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+
+.modal-enter-active .panel {
+  animation: panel-enter 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.modal-leave-active .panel {
+  animation: panel-leave 0.32s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes panel-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(28px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes panel-leave {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+  }
 }
 
 .panel {
@@ -152,10 +198,25 @@ function onBackdrop(e) {
   max-height: min(92dvh, 860px);
   overflow: auto;
   border-radius: 22px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  background: #fff;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8);
   padding: 14px 14px 16px;
+}
+
+button {
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.3s ease, box-shadow 0.3s ease, color 0.3s ease;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  transform: scale(1.02);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .head {
@@ -178,14 +239,26 @@ function onBackdrop(e) {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  font-size: 1.35rem;
-  line-height: 1;
+  display: grid;
+  place-items: center;
   color: #999;
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  padding: 0;
 }
 
 .x:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(255, 255, 255, 0.9);
   color: #111;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 1);
+  transform: scale(1.05);
+}
+
+.x:active {
+  transform: scale(0.95);
 }
 
 .preview {
@@ -194,10 +267,12 @@ function onBackdrop(e) {
   overflow: hidden;
   background: linear-gradient(180deg, #fff 0%, #fff8f2 100%);
   box-shadow:
-    inset 0 0 0 1px rgba(0, 0, 0, 0.04),
+    inset 0 2px 10px rgba(0, 0, 0, 0.05),
     0 8px 28px rgba(0, 0, 0, 0.05);
   display: grid;
   place-items: center;
+  position: relative;
+  transition: aspect-ratio 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .preview.square {
@@ -209,6 +284,12 @@ function onBackdrop(e) {
   height: 100%;
   object-fit: cover;
   display: block;
+  animation: img-fade-in 0.5s ease-out forwards;
+}
+
+@keyframes img-fade-in {
+  from { opacity: 0; filter: blur(4px); }
+  to { opacity: 1; filter: blur(0); }
 }
 
 .ph {
@@ -227,9 +308,10 @@ function onBackdrop(e) {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
-  padding: 3px;
+  padding: 4px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.035);
+  background: rgba(0, 0, 0, 0.04);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
 .seg button,
@@ -240,26 +322,36 @@ function onBackdrop(e) {
   font-size: 0.88rem;
   letter-spacing: 0.04em;
   color: #666;
+  border: 1px solid transparent;
 }
 
 .seg button.on {
-  background: #fff;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   color: #111;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  font-weight: 500;
 }
 
 .toggle {
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
 }
 
 .toggle[aria-pressed='true'] {
   color: #111;
-  border-color: rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .toggle:disabled {
   opacity: 0.55;
   cursor: default;
+  transform: scale(1) !important;
 }
 
 .privacy-note {
@@ -275,10 +367,19 @@ function onBackdrop(e) {
   font-weight: 600;
   background: #111;
   color: #fff;
+  border: 1px solid #000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #222, #333);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .primary:disabled {
   opacity: 0.5;
+  transform: scale(1) !important;
+  box-shadow: none;
 }
 
 @media (min-width: 720px) {
@@ -286,4 +387,37 @@ function onBackdrop(e) {
     place-items: center;
   }
 }
+
+
+@media (max-width: 719px) {
+  .sheet {
+    background: rgba(255, 255, 255, 0.62);
+    backdrop-filter: blur(8px) saturate(140%);
+    -webkit-backdrop-filter: blur(8px) saturate(140%);
+  }
+
+  .panel {
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+  }
+
+  .seg button.on,
+  .x {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal-enter-active,
+  .modal-leave-active,
+  .panel,
+  button,
+  .preview,
+  .preview img {
+    transition: none !important;
+    animation: none !important;
+  }
+}
 </style>
+

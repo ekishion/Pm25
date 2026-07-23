@@ -5,7 +5,7 @@ import { t } from '../i18n'
 const props = defineProps({
   /** boot | ready | leaving */
   phase: { type: String, default: 'boot' },
-  /** 0–1 真实加载进度 */
+  /** 0-1 真实加载进度 */
   progress: { type: Number, default: 0 },
   /** 当前阶段文案 key 对应的已翻译字符串 */
   statusText: { type: String, default: '' },
@@ -34,23 +34,35 @@ const statusLine = computed(() => props.statusText || t('splashHint'))
   >
     <div class="stage" aria-hidden="true">
       <div class="glow" />
-      <div class="match">
-        <div class="flame" :class="{ on: ready }">
-          <span class="flame-outer" />
-          <span class="flame-mid" />
-          <span class="flame-core" />
+
+      <!-- Ambient floating particles -->
+      <div class="particles">
+        <span v-for="i in 8" :key="i" class="particle" :class="`p${i}`" />
+      </div>
+
+      <div class="match-wrapper" :class="{ 'is-ready': ready }">
+        <div class="match">
+          <div class="flame" :class="{ on: ready }">
+            <span class="flame-outer" />
+            <span class="flame-mid" />
+            <span class="flame-core" />
+          </div>
+          <div class="head" />
+          <div class="stick" />
         </div>
-        <div class="head" />
-        <div class="stick" />
       </div>
       <div class="floor" />
     </div>
 
-    <div class="meta">
-      <p class="brand">{{ t('brand') }}</p>
-      <p class="hint">{{ statusLine }}</p>
-      <div class="track" aria-hidden="true">
-        <div class="bar" :style="barStyle" />
+    <div class="meta-container">
+      <div class="meta">
+        <p class="brand">{{ t('brand') }}</p>
+        <p class="hint">{{ statusLine }}</p>
+        <div class="track" aria-hidden="true">
+          <div class="bar" :style="barStyle">
+            <div class="bar-scanline" />
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -72,15 +84,18 @@ const statusLine = computed(() => props.statusText || t('splashHint'))
   background: #fff;
   color: #111;
   opacity: 1;
+  clip-path: circle(150% at 50% 50%);
   transition:
-    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
-    visibility 0.7s;
+    clip-path 0.9s cubic-bezier(0.76, 0, 0.24, 1),
+    opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0.9s;
 }
 
 .splash.leaving {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
+  clip-path: circle(0% at 50% 45%);
 }
 
 .stage {
@@ -102,6 +117,8 @@ const statusLine = computed(() => props.statusText || t('splashHint'))
   border-radius: 50%;
   background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.06), transparent 72%);
   filter: blur(2px);
+  opacity: 0;
+  animation: floor-in 1s cubic-bezier(0.22, 1, 0.36, 1) 0.2s forwards;
 }
 
 .glow {
@@ -114,13 +131,50 @@ const statusLine = computed(() => props.statusText || t('splashHint'))
   border-radius: 50%;
   background: radial-gradient(ellipse at center, rgba(255, 140, 60, 0.16), transparent 70%);
   filter: blur(16px);
-  opacity: 0.55;
-  animation: glow-breathe 2.4s ease-in-out infinite;
+  opacity: 0;
+  animation: glow-in 1.2s cubic-bezier(0.22, 1, 0.36, 1) 0.3s forwards;
 }
 
 .splash.ready .glow {
-  opacity: 0.85;
-  animation-duration: 1.8s;
+  animation: glow-breathe-ready 1.8s ease-in-out infinite;
+}
+
+/* Particles */
+.particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.particle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: #ffb15a;
+  border-radius: 50%;
+  opacity: 0;
+  filter: blur(1px);
+  box-shadow: 0 0 6px rgba(255, 106, 26, 0.6);
+}
+
+.p1 { left: 20%; bottom: 10%; animation: float-up 3.2s ease-in-out 0.1s infinite; }
+.p2 { left: 75%; bottom: 25%; animation: float-up 4.1s ease-in-out 0.8s infinite; }
+.p3 { left: 40%; bottom: 15%; animation: float-up 3.6s ease-in-out 1.2s infinite; }
+.p4 { left: 60%; bottom: 30%; animation: float-up 4.5s ease-in-out 0.5s infinite; }
+.p5 { left: 30%; bottom: 40%; animation: float-up 3.8s ease-in-out 1.5s infinite; }
+.p6 { left: 80%; bottom: 10%; animation: float-up 4.2s ease-in-out 0.3s infinite; }
+.p7 { left: 50%; bottom: 5%; animation: float-up 3.5s ease-in-out 2.0s infinite; }
+.p8 { left: 65%; bottom: 45%; animation: float-up 4.0s ease-in-out 1.0s infinite; }
+
+.match-wrapper {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 86%;
+}
+
+.match-wrapper.is-ready {
+  animation: bounce-ready 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
 
 .match {
@@ -131,7 +185,8 @@ const statusLine = computed(() => props.statusText || t('splashHint'))
   height: 180px;
   margin-left: -14px;
   transform-origin: 50% 100%;
-  animation: match-in 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  opacity: 0;
+  animation: match-in 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .stick {
@@ -142,7 +197,7 @@ const statusLine = computed(() => props.statusText || t('splashHint'))
   height: 128px;
   margin-left: -4.5px;
   border-radius: 4px;
-  background: linear-gradient(180deg, #e8cda8 0%, var(--wood) 42%, var(--wood-deep) 100%);
+  background: linear-gradient(180deg, #e8cda8 0%, var(--wood, #d0a36e) 42%, var(--wood-deep, #8b5a2b) 100%);
 }
 
 .head {
@@ -153,7 +208,7 @@ const statusLine = computed(() => props.statusText || t('splashHint'))
   height: 17px;
   margin-left: -7.5px;
   border-radius: 50% 50% 46% 46%;
-  background: radial-gradient(circle at 35% 30%, #4a3224, var(--head) 72%);
+  background: radial-gradient(circle at 35% 30%, #4a3224, var(--head, #2d1e15) 72%);
   box-shadow: 0 0 0 0 rgba(255, 106, 26, 0.2);
   animation: head-pulse 2.2s ease-in-out infinite;
 }
@@ -216,36 +271,55 @@ const statusLine = computed(() => props.statusText || t('splashHint'))
   background: radial-gradient(ellipse at 50% 80%, #fff8e8, #ffe08a 62%, transparent 82%);
 }
 
+.meta-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  perspective: 1000px;
+}
+
 .meta {
   text-align: center;
   display: grid;
-  gap: 10px;
+  gap: 12px;
   justify-items: center;
-  animation: meta-in 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both;
+  padding: 24px 36px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.04), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  transform: translateY(16px) rotateX(4deg);
+  animation: meta-in 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.6s forwards;
 }
 
 .brand {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   font-weight: 600;
   letter-spacing: 0.28em;
   color: #222;
+  animation: brand-breathe 4s ease-in-out infinite;
 }
 
 .hint {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   letter-spacing: 0.16em;
-  color: var(--text-faint);
+  color: var(--text-faint, #888);
 }
 
 .track {
-  width: min(120px, 28vw);
-  height: 2px;
-  margin-top: 6px;
+  width: min(140px, 32vw);
+  height: 4px;
+  margin-top: 8px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.04);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
   overflow: hidden;
+  position: relative;
 }
 
 .bar {
@@ -254,98 +328,96 @@ const statusLine = computed(() => props.statusText || t('splashHint'))
   transform-origin: 0 50%;
   border-radius: inherit;
   background: linear-gradient(90deg, #ffb15a, #ff6a1a);
+  box-shadow: 0 0 8px rgba(255, 106, 26, 0.4);
   transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.bar-scanline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  animation: scanline 1.5s linear infinite;
 }
 
 @keyframes match-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  from { opacity: 0; transform: translateY(24px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes floor-in {
+  from { opacity: 0; transform: translateX(-50%) scale(0.8); }
+  to { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+
+@keyframes glow-in {
+  from { opacity: 0; transform: translateX(-50%) scale(0.8); }
+  to { opacity: 0.55; transform: translateX(-50%) scale(1); }
+}
+
+@keyframes glow-breathe-ready {
+  0%, 100% { opacity: 0.55; transform: translateX(-50%) scale(1); }
+  50% { opacity: 0.85; transform: translateX(-50%) scale(1.06); }
 }
 
 @keyframes meta-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+  from { opacity: 0; transform: translateY(16px) rotateX(4deg); }
+  to { opacity: 1; transform: translateY(0) rotateX(0); }
 }
 
 @keyframes head-pulse {
-  0%,
-  100% {
-    filter: brightness(1);
-  }
-  50% {
-    filter: brightness(1.12);
-  }
-}
-
-@keyframes glow-breathe {
-  0%,
-  100% {
-    opacity: 0.45;
-    transform: translateX(-50%) scale(1);
-  }
-  50% {
-    opacity: 0.8;
-    transform: translateX(-50%) scale(1.06);
-  }
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.12); }
 }
 
 @keyframes flame-pop {
-  0% {
-    transform: scale(0) translateY(6px);
-    opacity: 0;
-  }
-  70% {
-    transform: scale(1.08);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
+  0% { transform: scale(0) translateY(6px); opacity: 0; }
+  70% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 @keyframes flame-breathe {
-  0%,
-  100% {
-    transform: scale(1) translateY(0) rotate(-1deg);
-  }
-  50% {
-    transform: scale(1.05) translateY(-2px) rotate(1deg);
-  }
+  0%, 100% { transform: scale(1) translateY(0) rotate(-1deg); }
+  50% { transform: scale(1.05) translateY(-2px) rotate(1deg); }
+}
+
+@keyframes bounce-ready {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.06) translateY(-4px); }
+  70% { transform: scale(0.98) translateY(2px); }
+  100% { transform: scale(1) translateY(0); }
+}
+
+@keyframes float-up {
+  0% { transform: translateY(0) scale(0.5); opacity: 0; }
+  20% { opacity: 0.8; }
+  80% { opacity: 0.8; }
+  100% { transform: translateY(-80px) scale(1.2); opacity: 0; }
+}
+
+@keyframes brand-breathe {
+  0%, 100% { letter-spacing: 0.28em; opacity: 1; }
+  50% { letter-spacing: 0.34em; opacity: 0.85; }
+}
+
+@keyframes scanline {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .match,
-  .meta,
-  .glow,
-  .head,
-  .flame.on {
+  .match, .meta, .glow, .head, .flame.on, .particle, .bar-scanline, .brand, .floor, .match-wrapper {
     animation: none !important;
   }
-
-  .flame.on {
-    opacity: 1;
-    transform: scale(1);
-  }
-
-  .splash {
-    transition-duration: 0.2s;
-  }
-
-  .bar {
-    transition: none;
-  }
+  .match, .meta, .floor { opacity: 1; transform: none; }
+  .glow { opacity: 0.55; }
+  .flame.on { opacity: 1; transform: scale(1); }
+  .splash { transition-duration: 0.2s; clip-path: none !important; }
+  .splash.leaving { clip-path: none !important; }
+  .bar { transition: none; }
 }
 </style>
