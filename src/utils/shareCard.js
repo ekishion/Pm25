@@ -4,6 +4,23 @@
 
 import { formatMatchCount } from './aqi'
 import { drawFireScene } from './drawFire'
+import { formatCoords, issueStamp } from './editorial'
+
+/** 手动字距绘制：canvas letterSpacing 兼容性不稳，逐字排布保证效果一致 */
+function drawTrackedText(ctx, text, cx, y, tracking) {
+  const chars = [...String(text)]
+  if (!chars.length) return
+  const widths = chars.map((ch) => ctx.measureText(ch).width)
+  const total = widths.reduce((a, b) => a + b, 0) + tracking * (chars.length - 1)
+  let x = cx - total / 2
+  const prevAlign = ctx.textAlign
+  ctx.textAlign = 'left'
+  for (let i = 0; i < chars.length; i += 1) {
+    ctx.fillText(chars[i], x, y)
+    x += widths[i] + tracking
+  }
+  ctx.textAlign = prevAlign
+}
 
 /**
  * @param {object} data
@@ -24,6 +41,7 @@ export async function renderShareCard(data) {
     brand = '火柴',
     unit = '根 / 时',
     modeLabel = '',
+    overline = '',
     foot = '此刻空气 ≈ 火柴燃烧',
     lat = null,
     lon = null,
@@ -82,19 +100,12 @@ export async function renderShareCard(data) {
   ctx.textAlign = 'right'
   ctx.fillText('+', W - padX + 8, H - padY + 8)
 
-  // 刊号
-  const issueText =
-    issue ||
-    (() => {
-      const d = new Date()
-      const start = new Date(d.getFullYear(), 0, 0)
-      const day = Math.floor((d - start) / 86400000)
-      return `MATCH · VOL. ${d.getFullYear()} · NO. ${String(day).padStart(3, '0')}`
-    })()
-  ctx.textAlign = 'center'
+  // 刊号：轻字距贴近 UI 顶栏
+  const issueText = issue || issueStamp()
+  ctx.textBaseline = 'alphabetic'
   ctx.fillStyle = 'rgba(0,0,0,0.28)'
   ctx.font = `500 22px ${mono}`
-  ctx.fillText(issueText, cx, padY + 4)
+  drawTrackedText(ctx, issueText, cx, padY + 10, 2.5)
 
   // 顶部：城市 / 品牌
   const topY = padY + 48
@@ -126,12 +137,18 @@ export async function renderShareCard(data) {
     clean: isClean,
   })
 
-  // 数字
+  // 揭晓区：overline → 数字 → 模式衬线 → 发丝线 → meta（与 UI readout 同构）
   const countText = formatMatchCount(matchCount)
   const unitText = unit
   const numY = H * (isSquare ? 0.7 : 0.69)
 
   ctx.textBaseline = 'alphabetic'
+  if (overline) {
+    ctx.fillStyle = 'rgba(0,0,0,0.32)'
+    ctx.font = `500 21px ${mono}`
+    drawTrackedText(ctx, overline, cx, numY - 150, 6)
+  }
+
   ctx.font = `600 140px ${sans}`
   const numW = ctx.measureText(countText).width
   ctx.font = `500 32px ${sans}`
@@ -157,21 +174,26 @@ export async function renderShareCard(data) {
     ctx.fillText(modeLabel, cx, numY + 48)
   }
 
+  // 发丝线：呼应 UI readout 的 hairline
+  const hairY = numY + (modeLabel ? 76 : 34)
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)'
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(cx - 58, hairY)
+  ctx.lineTo(cx + 58, hairY)
+  ctx.stroke()
+
   const meta = []
   if (pm25 != null && Number.isFinite(Number(pm25))) meta.push(`PM2.5  ${Math.round(Number(pm25))}`)
   if (aqi != null && Number.isFinite(Number(aqi))) meta.push(`AQI  ${Math.round(Number(aqi))}`)
   ctx.fillStyle = '#a8a8a8'
   ctx.font = `400 24px ${mono}`
   ctx.textAlign = 'center'
-  if (meta.length) ctx.fillText(meta.join('   ·   '), cx, numY + (modeLabel ? 92 : 52))
+  if (meta.length) ctx.fillText(meta.join('   ·   '), cx, hairY + 44)
 
   // 坐标（隐私模式不绘制）
-  const la = Number(lat)
-  const lo = Number(lon)
-  if (showCoords && Number.isFinite(la) && Number.isFinite(lo)) {
-    const ns = la >= 0 ? 'N' : 'S'
-    const ew = lo >= 0 ? 'E' : 'W'
-    const coord = `${Math.abs(la).toFixed(2)}° ${ns}  ·  ${Math.abs(lo).toFixed(2)}° ${ew}`
+  const coord = showCoords ? formatCoords(lat, lon) : ''
+  if (coord) {
     ctx.fillStyle = 'rgba(0,0,0,0.22)'
     ctx.font = `500 20px ${mono}`
     ctx.fillText(coord, cx, H - padY - 42)

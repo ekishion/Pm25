@@ -59,6 +59,10 @@ const dict = {
     privacyPlace: '此处',
     privacyHint: '已隐藏位置信息',
     privacyShown: '已显示位置',
+    locating: '定位中…',
+    located: '已使用精确定位',
+    geoDenied: '未授权定位 · 已用网络位置',
+    locateTitle: '点击获取精确定位',
   },
   en: {
     brand: 'Match',
@@ -116,6 +120,10 @@ const dict = {
     privacyPlace: 'here',
     privacyHint: 'location hidden',
     privacyShown: 'location visible',
+    locating: 'locating…',
+    located: 'precise location on',
+    geoDenied: 'no permission · using network location',
+    locateTitle: 'tap for precise location',
   },
 }
 

@@ -94,6 +94,15 @@ export function drawLayeredFlame(ctx, x, y, scale = 1) {
     '#ffe08a',
     'rgba(255, 200, 100, 0)',
   ])
+
+  // 焰基蓝晕：与 DOM 火柴一致的最热点冷色
+  const base = ctx.createRadialGradient(x, y + 2 * s, 0.5, x, y + 2 * s, 9 * s)
+  base.addColorStop(0, 'rgba(96, 140, 255, 0.26)')
+  base.addColorStop(1, 'rgba(96, 140, 255, 0)')
+  ctx.fillStyle = base
+  ctx.beginPath()
+  ctx.ellipse(x, y + 2 * s, 8 * s, 5.5 * s, 0, 0, Math.PI * 2)
+  ctx.fill()
 }
 
 /**

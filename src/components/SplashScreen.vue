@@ -81,13 +81,13 @@ const statusLine = computed(() => props.statusText || t('splashHint'))
     calc(24px + var(--safe-right))
     calc(28px + var(--safe-bottom))
     calc(24px + var(--safe-left));
-  background: #fff;
-  color: #111;
+  background: var(--bg);
+  color: var(--text);
   opacity: 1;
   clip-path: circle(150% at 50% 50%);
   transition:
     clip-path 0.9s cubic-bezier(0.76, 0, 0.24, 1),
-    opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.9s var(--ease-out),
     visibility 0.9s;
 }
 
@@ -284,15 +284,15 @@ const statusLine = computed(() => props.statusText || t('splashHint'))
   gap: 12px;
   justify-items: center;
   padding: 24px 36px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.8);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.04), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  border-radius: var(--radius-m, 20px);
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.04), inset 0 1px 0 var(--glass-inner);
   opacity: 0;
   transform: translateY(16px) rotateX(4deg);
-  animation: meta-in 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.6s forwards;
+  animation: meta-in 0.9s var(--ease-out) 0.6s forwards;
 }
 
 .brand {
@@ -300,7 +300,7 @@ const statusLine = computed(() => props.statusText || t('splashHint'))
   font-size: 1.05rem;
   font-weight: 600;
   letter-spacing: 0.28em;
-  color: #222;
+  color: var(--text);
   animation: brand-breathe 4s ease-in-out infinite;
 }
 
@@ -316,7 +316,7 @@ const statusLine = computed(() => props.statusText || t('splashHint'))
   height: 4px;
   margin-top: 8px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--seg-bg);
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
   overflow: hidden;
   position: relative;

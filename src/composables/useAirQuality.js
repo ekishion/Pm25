@@ -107,7 +107,8 @@ export function useAirQuality(deps = {}) {
   }
 
   async function loadData(options = {}) {
-    const force = Boolean(options.force)
+    const precise = Boolean(options.precise)
+    const force = Boolean(options.force) || precise
 
     if (loadPromise && !force) return loadPromise
 
@@ -132,7 +133,7 @@ export function useAirQuality(deps = {}) {
         offline.value = typeof navigator !== 'undefined' && navigator.onLine === false
         reportProgress('start')
 
-        const loc = await detectLocation({ force })
+        const loc = await detectLocation({ force, precise })
         if (seq !== loadSeq) return
 
         location.value = {
@@ -246,6 +247,22 @@ export function useAirQuality(deps = {}) {
     }
   }
 
+  /**
+   * 用户显式请求 GPS 精确定位并整体刷新（须在用户手势内调用）
+   * @returns {Promise<boolean>} 是否拿到了真实 GPS 坐标
+   */
+  async function locatePrecise({ stage, onBurningRefresh } = {}) {
+    if (quotaExceeded.value) {
+      deps.onFlashHint?.(t('quotaHint', { n: quotaLimit.value || 200 }))
+      return false
+    }
+    await loadData({ precise: true })
+    if (stage === 'burning' && !error.value && air.value) {
+      onBurningRefresh?.()
+    }
+    return location.value?.source === 'gps'
+  }
+
   function syncOnlineStatus() {
     offline.value = typeof navigator !== 'undefined' && navigator.onLine === false
   }
@@ -265,6 +282,7 @@ export function useAirQuality(deps = {}) {
     wxStyle,
     loadData,
     softRefresh,
+    locatePrecise,
     refreshPlaceLabel,
     bumpLocale,
     syncOnlineStatus,

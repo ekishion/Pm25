@@ -1,11 +1,12 @@
 /**
- * 城市级定位（不要求精确、不申请浏览器权限）
+ * 定位：真实优先，网络兜底
  *
- * 注意：浏览器直连会撞 CORS 的源一律不走（如太平洋 IP）。
+ * 0) 浏览器 GPS —— 已授权时静默使用；用户点击城市名可显式请求（真实坐标 → 最近站点空气）
  * 1) ipwho / ipip 抢城市（ipwho 常带坐标）
  * 2) 有 IPv4 时用高德 IP（同源代理）补中文名 + 矩形中心
  * 3) 仍无有效坐标时用高德地理编码 city → lat/lon
  *
+ * 注意：浏览器直连会撞 CORS 的源一律不走（如太平洋 IP）。
  * 严禁把 null 坐标写成 0,0（会打到 Null Island，空气读数全 0）
  */
 
@@ -24,7 +25,14 @@ const T = {
   amap: 2600,
   geocode: 2600,
   race: 2600,
+  /** 已授权时的静默 GPS：短等，超时无感回落 IP */
+  gps: 3500,
+  /** 用户显式请求精确定位：允许等系统权限弹窗 + 首次定位 */
+  gpsExplicit: 12000,
 }
+
+/** GPS 展示占位：placeName 会逆地理成真实地名 */
+const GPS_PLACEHOLDER = '当前位置'
 
 function asText(v) {
   if (v == null) return ''
@@ -65,6 +73,51 @@ function usable(loc) {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms))
+}
+
+/** 地理定位权限状态：granted | prompt | denied | unknown */
+export async function getGeoPermissionState() {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.permissions?.query) return 'unknown'
+    const st = await navigator.permissions.query({ name: 'geolocation' })
+    return st?.state || 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+/**
+ * 浏览器 GPS：真实坐标（explicit 时可触发系统权限弹窗，须在用户手势内调用）
+ * @param {{ explicit?: boolean }} [opts]
+ */
+function fromBrowserGeolocation({ explicit = false } = {}) {
+  return new Promise((resolve, reject) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      reject(new Error('geolocation unavailable'))
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const loc = buildLoc({
+          source: 'gps',
+          city: GPS_PLACEHOLDER,
+          lat: pos?.coords?.latitude,
+          lon: pos?.coords?.longitude,
+        })
+        if (!hasCoords(loc)) {
+          reject(new Error('gps coords'))
+          return
+        }
+        resolve(loc)
+      },
+      (err) => reject(new Error(err?.message || 'gps denied')),
+      {
+        enableHighAccuracy: explicit,
+        timeout: explicit ? T.gpsExplicit : T.gps,
+        maximumAge: 5 * 60 * 1000,
+      },
+    )
+  })
 }
 
 /** ipip.net：国内城市通常较准；可能无 CORS，失败则忽略 */
@@ -310,7 +363,18 @@ async function ensureCoords(loc) {
   throw new Error('no coords')
 }
 
-async function detectLocationOnce() {
+async function detectLocationOnce(opts = {}) {
+  // 0) 真实 GPS：显式请求时必试；静默流程仅在已授权时试（不打扰用户）
+  const explicit = Boolean(opts.precise)
+  try {
+    const perm = await getGeoPermissionState()
+    if (explicit || perm === 'granted') {
+      return await fromBrowserGeolocation({ explicit })
+    }
+  } catch {
+    /* 被拒 / 超时 / 不支持 → 回落网络定位 */
+  }
+
   const bag = []
   const push = (p) =>
     p
@@ -335,10 +399,15 @@ async function detectLocationOnce() {
   return merged
 }
 
+/**
+ * @param {{ force?: boolean, precise?: boolean }} [options]
+ * precise：用户显式请求 GPS 精确定位（隐含 force，须在用户手势内触发）
+ */
 export async function detectLocation(options = {}) {
-  const force = Boolean(options.force)
+  const precise = Boolean(options.precise)
+  const force = Boolean(options.force) || precise
   if (force) clearRequestCache(LOC_CACHE_KEY)
-  return guardedRequest(LOC_CACHE_KEY, detectLocationOnce, {
+  return guardedRequest(LOC_CACHE_KEY, () => detectLocationOnce({ precise }), {
     ttlMs: LOC_TTL,
     errorTtlMs: LOC_ERR_TTL,
     force,

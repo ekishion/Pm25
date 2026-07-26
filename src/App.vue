@@ -1,13 +1,14 @@
-﻿<script setup>
+<script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import MatchScene from './components/MatchScene.vue'
 import ShareSheet from './components/ShareSheet.vue'
 import SplashScreen from './components/SplashScreen.vue'
 import ParticleCanvas from './components/ParticleCanvas.vue'
 import CustomCursor from './components/CustomCursor.vue'
-import { EyeOff, Eye, Share2, Volume2, VolumeX, Languages } from 'lucide-vue-next'
+import { EyeOff, Eye, MapPin, Share2, Volume2, VolumeX, Languages } from 'lucide-vue-next'
 import { daypartStyle } from './utils/daypart'
 import { formatUpdatedLine } from './utils/time'
+import { issueStamp as buildIssueStamp, formatCoords } from './utils/editorial'
 import { sleep } from './utils/animate'
 import { getLocale, initI18n, onLocaleChange, setLocale, t } from './i18n'
 import {
@@ -90,7 +91,7 @@ const {
   place,
   wxStyle,
   loadData,
-  softRefresh: softRefreshAir,
+  locatePrecise,
   bumpLocale,
   syncOnlineStatus,
 } = airApi
@@ -165,6 +166,7 @@ const sharePayload = computed(() => ({
   brand: t('brand'),
   unit: t('unit'),
   modeLabel: subtitle.value,
+  overline: overlineLabel.value,
   foot: t('foot'),
   lat: privacyOn.value ? null : location.value?.lat ?? null,
   lon: privacyOn.value ? null : location.value?.lon ?? null,
@@ -176,22 +178,13 @@ const sharePayload = computed(() => ({
 /** 杂志刊号角标：MATCH · VOL. 年 + 日序 */
 const issueStamp = computed(() => {
   void localeTick.value
-  const d = new Date()
-  const start = new Date(d.getFullYear(), 0, 0)
-  const day = Math.floor((d - start) / 86400000)
-  const vol = String(day).padStart(3, '0')
-  return `MATCH · VOL. ${d.getFullYear()} · NO. ${vol}`
+  return buildIssueStamp()
 })
 
 /** 经纬度纪实角标（隐私模式不展示） */
 const coordStamp = computed(() => {
   if (privacyOn.value) return ''
-  const lat = Number(location.value?.lat)
-  const lon = Number(location.value?.lon)
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return ''
-  const ns = lat >= 0 ? 'N' : 'S'
-  const ew = lon >= 0 ? 'E' : 'W'
-  return `${Math.abs(lat).toFixed(2)}° ${ns}  ·  ${Math.abs(lon).toFixed(2)}° ${ew}`
+  return formatCoords(location.value?.lat, location.value?.lon)
 })
 
 const overlineLabel = computed(() => {
@@ -199,11 +192,25 @@ const overlineLabel = computed(() => {
   return t('editorialOverline')
 })
 
-async function softRefresh() {
-  await softRefreshAir({
-    stage: stage.value,
-    onBurningRefresh: refreshBurningReadout,
-  })
+/** 点击城市名：请求 GPS 精确定位并刷新（在用户手势内触发权限弹窗） */
+let locateBusy = false
+async function onPlaceClick() {
+  if (locateBusy) return
+  if (quotaExceeded.value) {
+    flashHint(quotaHintLine.value)
+    return
+  }
+  locateBusy = true
+  flashHint(t('locating'))
+  try {
+    const gotGps = await locatePrecise({
+      stage: stage.value,
+      onBurningRefresh: refreshBurningReadout,
+    })
+    flashHint(gotGps ? t('located') : t('geoDenied'))
+  } finally {
+    locateBusy = false
+  }
 }
 
 async function toggleSound() {
@@ -421,33 +428,18 @@ onUnmounted(() => {
     <div class="day-veil" aria-hidden="true" />
     <div class="ember-glow" aria-hidden="true" />
 
-    <!-- 浮动几何装饰 -->
-    <div class="geo-shapes" aria-hidden="true">
-      <span class="geo geo-a" />
-      <span class="geo geo-b" />
-      <span class="geo geo-c" />
-      <span class="geo geo-d" />
-    </div>
-
     <div class="sr-only" aria-live="polite" aria-atomic="true">{{ liveMessage }}</div>
-
-    <!-- 杂志角标：仅四角 + 与顶栏错开的刊号 -->
-    <div class="pub-marks" aria-hidden="true">
-      <span class="pub-cross tl">+</span>
-      <span class="pub-cross tr">+</span>
-      <span class="pub-cross bl">+</span>
-      <span class="pub-cross br">+</span>
-    </div>
 
     <header class="top">
       <button
         type="button"
         class="place"
         :class="{ show: entered && (!!displayPlace || privacyOn), private: privacyOn }"
-        :title="privacyOn ? t('privacyHint') : t('refreshed')"
-        @click="softRefresh"
+        :title="privacyOn ? t('privacyHint') : t('locateTitle')"
+        @click="onPlaceClick"
       >
-        {{ displayPlace || ' ' }}
+        <MapPin :size="14" :stroke-width="1.8" aria-hidden="true" />
+        <span class="place-label">{{ displayPlace || ' ' }}</span>
       </button>
 
       <p class="pub-issue" :class="{ show: entered && !splashMounted }" aria-hidden="true">
@@ -560,7 +552,7 @@ onUnmounted(() => {
           <span v-else-if="stage === 'failed'">{{ t('failHint') }}</span>
           <template v-else>
             <span v-if="air?.pm25 != null">PM2.5 {{ Math.round(air.pm25) }}</span>
-            <span v-if="air?.aqi != null" :class="{ sep: air?.pm25 != null }">AQI {{ air.aqi }}</span>
+            <span v-if="air?.aqi != null">AQI {{ air.aqi }}</span>
           </template>
         </div>
         <!-- 次要信息只保留一行，避免堆叠 -->
@@ -629,9 +621,9 @@ onUnmounted(() => {
   transform: translateY(12px) scale(0.98);
   filter: blur(4px);
   transition:
-    opacity 1s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 1s cubic-bezier(0.22, 1, 0.36, 1),
-    filter 1.2s cubic-bezier(0.22, 1, 0.36, 1);
+    opacity 1s var(--ease-out),
+    transform 1s var(--ease-out),
+    filter 1.2s var(--ease-out);
 }
 
 .app.entered {
@@ -666,7 +658,7 @@ onUnmounted(() => {
   border-radius: 50%;
   background: radial-gradient(
     ellipse at center,
-    rgba(255, 106, 26, calc(0.04 + var(--intensity, 0.2) * 0.05)) 0%,
+    rgba(var(--flame-rgb), calc(0.04 + var(--intensity, 0.2) * 0.05)) 0%,
     transparent 72%
   );
   filter: blur(10px);
@@ -677,62 +669,6 @@ onUnmounted(() => {
 .app.burning .ember-glow,
 .app.failed .ember-glow {
   opacity: 1;
-}
-
-/* 浮动几何装饰 */
-.geo-shapes {
-  pointer-events: none;
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-}
-
-.geo {
-  position: absolute;
-  border: 1px solid rgba(0, 0, 0, 0.04);
-  border-radius: 2px;
-}
-
-.geo-a {
-  top: 12%;
-  right: 8%;
-  width: 28px;
-  height: 28px;
-  transform: rotate(45deg);
-  animation: float-drift 18s ease-in-out infinite;
-}
-
-.geo-b {
-  bottom: 18%;
-  left: 6%;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  animation: float-drift-alt 22s ease-in-out infinite;
-  animation-delay: -4s;
-}
-
-.geo-c {
-  top: 38%;
-  left: 4%;
-  width: 36px;
-  height: 1px;
-  border: none;
-  background: rgba(0, 0, 0, 0.04);
-  animation: float-drift 26s ease-in-out infinite;
-  animation-delay: -8s;
-}
-
-.geo-d {
-  bottom: 32%;
-  right: 5%;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border-color: rgba(255, 106, 26, 0.06);
-  animation: float-drift-alt 20s ease-in-out infinite;
-  animation-delay: -12s;
 }
 
 .warm-flash {
@@ -749,43 +685,6 @@ onUnmounted(() => {
   opacity: 1;
 }
 
-/* 四角十字：不占文档流 */
-.pub-marks {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-}
-
-.pub-cross {
-  position: absolute;
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 400;
-  color: rgba(0, 0, 0, 0.12);
-  line-height: 1;
-}
-
-.pub-cross.tl {
-  top: 8px;
-  left: 8px;
-}
-
-.pub-cross.tr {
-  top: 8px;
-  right: 8px;
-}
-
-.pub-cross.bl {
-  bottom: 8px;
-  left: 8px;
-}
-
-.pub-cross.br {
-  bottom: 8px;
-  right: 8px;
-}
-
 .top {
   position: relative;
   z-index: 2;
@@ -794,41 +693,71 @@ onUnmounted(() => {
   align-items: center;
   column-gap: 8px;
   min-width: 0;
-  height: 44px;
+  height: 48px;
   max-width: 100%;
 }
 
+/* 定位胶囊：毛玻璃 pill，点击请求精确定位 */
 .place {
   position: relative;
   z-index: 2;
   justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   min-width: 0;
   max-width: 100%;
-  height: 44px;
-  padding: 0;
-  display: inline-block;
-  font-family: var(--font-editorial);
-  font-size: 0.98rem;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(24px) saturate(170%);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 var(--glass-inner);
+  font-size: 0.85rem;
   font-weight: 500;
-  font-style: italic;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
   color: var(--text-soft);
   white-space: nowrap;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity 0.7s var(--ease-out) 0.12s,
+    transform 0.7s var(--ease-out) 0.12s,
+    color 0.2s ease,
+    background 0.25s ease;
+}
+
+.place:hover {
+  color: var(--text);
+  background: var(--glass-bg-strong);
+}
+
+.place:active {
+  transform: scale(0.97);
+}
+
+.place svg {
+  flex: 0 0 auto;
+  opacity: 0.65;
+}
+
+.place-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  opacity: 0;
-  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.12s;
-  text-align: left;
-  line-height: 44px;
 }
 
 .place.show {
   opacity: 1;
+  transform: none;
 }
 
 .place.private {
-  letter-spacing: 0.12em;
-  font-style: normal;
+  letter-spacing: 0.1em;
   color: var(--text-faint);
 }
 
@@ -848,7 +777,7 @@ onUnmounted(() => {
   font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(0, 0, 0, 0.2);
+  color: var(--ink-faint);
   opacity: 0;
   transition: opacity 0.8s ease 0.15s;
 }
@@ -857,24 +786,32 @@ onUnmounted(() => {
   opacity: 1;
 }
 
+/* 操作簇：毛玻璃胶囊，按钮内嵌 */
 .top-actions {
   position: relative;
   z-index: 2;
   justify-self: end;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: flex-end;
   flex: 0 0 auto;
-  height: 44px;
-  gap: 0;
+  gap: 2px;
   min-width: 0;
-  padding-left: 12px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(24px) saturate(170%);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 var(--glass-inner);
 }
 
 .icon-btn {
   box-sizing: border-box;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   margin: 0;
   padding: 0;
   display: inline-flex;
@@ -892,7 +829,7 @@ onUnmounted(() => {
     background 0.2s ease,
     opacity 0.35s ease,
     width 0.25s ease,
-    transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform 0.4s var(--ease-spring);
 }
 
 .icon-btn:not(.visible) {
@@ -912,8 +849,8 @@ onUnmounted(() => {
 }
 
 .icon-btn:hover:not(:disabled) {
-  color: #111;
-  background: rgba(0, 0, 0, 0.04);
+  color: var(--text);
+  background: var(--hover-bg);
   transform: scale(1.08);
 }
 
@@ -942,7 +879,7 @@ onUnmounted(() => {
 
 .lang-btn {
   width: auto;
-  min-width: 40px;
+  min-width: 36px;
   padding: 0 10px;
   border-radius: 999px;
   overflow: visible;
@@ -976,7 +913,7 @@ onUnmounted(() => {
     saturate(var(--flame-sat, 1))
     blur(3px);
   transition:
-    transform 1.2s cubic-bezier(0.22, 1, 0.36, 1) 0.1s,
+    transform 1.2s var(--ease-out) 0.1s,
     opacity 1s ease 0.1s,
     filter 1.4s ease 0.1s;
 }
@@ -997,31 +934,30 @@ onUnmounted(() => {
   gap: 12px;
   padding: 14px 30px;
   border-radius: 999px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  background: rgba(255, 255, 255, 0.65);
-  color: #111;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-strong);
+  color: var(--text);
   font-size: 0.95rem;
   font-weight: 500;
   letter-spacing: 0.32em;
   backdrop-filter: blur(32px) saturate(180%);
   -webkit-backdrop-filter: blur(32px) saturate(180%);
   box-shadow:
-    0 12px 40px rgba(0, 0, 0, 0.04),
-    0 0 0 1px rgba(255, 255, 255, 0.5) inset,
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    0 12px 40px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 var(--glass-inner);
   transition:
-    transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.5s var(--ease-spring),
     box-shadow 0.4s ease,
     opacity 0.35s ease;
-  animation: ignite-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.25s both;
+  animation: ignite-in 0.7s var(--ease-out) 0.25s both;
 }
 
 .ignite:hover:not(:disabled) {
   transform: translateY(-3px) scale(1.03);
   box-shadow:
-    0 20px 50px rgba(255, 106, 26, 0.14),
-    0 0 0 1px rgba(255, 255, 255, 0.7) inset,
-    0 0 32px rgba(255, 106, 26, 0.08);
+    0 20px 50px rgba(var(--flame-rgb), 0.16),
+    inset 0 1px 0 var(--glass-inner),
+    0 0 32px rgba(var(--flame-rgb), 0.1);
 }
 
 .ignite:active:not(:disabled) {
@@ -1036,7 +972,7 @@ onUnmounted(() => {
 .ignite:focus-visible,
 .icon-btn:focus-visible,
 .place:focus-visible {
-  outline: 2px solid rgba(17, 17, 17, 0.25);
+  outline: 2px solid var(--ink-faint);
   outline-offset: 2px;
 }
 
@@ -1045,7 +981,7 @@ onUnmounted(() => {
   height: 8px;
   border-radius: 50%;
   background: var(--flame);
-  box-shadow: 0 0 0 0 rgba(255, 106, 26, 0.4);
+  box-shadow: 0 0 0 0 rgba(var(--flame-rgb), 0.4);
   animation: pulse-dot 1.8s ease-out infinite;
 }
 
@@ -1076,35 +1012,35 @@ onUnmounted(() => {
 .readout.reveal {
   opacity: 1;
   transform: none;
-  animation: readout-enter 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: readout-enter 0.9s var(--ease-out) both;
 }
 
 .readout.reveal .overline {
-  animation: reveal-fade 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.05s both;
+  animation: reveal-fade 0.7s var(--ease-out) 0.05s both;
 }
 
 .readout.reveal .num {
-  animation: numeral-focus 1.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: numeral-focus 1.65s var(--ease-focus) both;
 }
 
 .readout.reveal .unit {
-  animation: reveal-fade 0.85s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both;
+  animation: reveal-fade 0.85s var(--ease-out) 0.2s both;
 }
 
 .readout.reveal .mode-line {
-  animation: reveal-fade 0.85s cubic-bezier(0.22, 1, 0.36, 1) 0.35s both;
+  animation: reveal-fade 0.85s var(--ease-out) 0.35s both;
 }
 
 .readout.reveal .hairline {
-  animation: hairline-draw 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.45s both;
+  animation: hairline-draw 0.7s var(--ease-out) 0.45s both;
 }
 
 .readout.reveal .meta {
-  animation: reveal-fade 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.55s both;
+  animation: reveal-fade 0.8s var(--ease-out) 0.55s both;
 }
 
 .readout.reveal .submeta {
-  animation: reveal-fade 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.7s both;
+  animation: reveal-fade 0.75s var(--ease-out) 0.7s both;
 }
 
 .overline {
@@ -1138,7 +1074,7 @@ onUnmounted(() => {
 }
 
 .num.muted {
-  color: #bbb;
+  color: var(--text-faint);
   animation: none !important;
   filter: none !important;
 }
@@ -1156,11 +1092,11 @@ onUnmounted(() => {
   font-style: italic;
   font-weight: 500;
   letter-spacing: 0.05em;
-  color: rgba(20, 20, 20, 0.5);
+  color: var(--text-soft);
 }
 
 .mode-line.warn {
-  color: #c45a2a;
+  color: var(--warn);
 }
 
 .hairline {
@@ -1171,25 +1107,42 @@ onUnmounted(() => {
   transform-origin: 50% 50%;
 }
 
-.meta,
+/* 数据芯片：毛玻璃胶囊承载 PM2.5 / AQI */
+.meta {
+  margin-top: 12px;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.meta span {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 13px;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  color: var(--text-soft);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 .submeta {
-  margin-top: 10px;
+  margin-top: 8px;
+  min-height: 1.1em;
   display: flex;
   justify-content: center;
   flex-wrap: wrap;
   gap: 8px 12px;
   color: var(--text-faint);
-  font-size: 0.74rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.submeta {
-  margin-top: 6px;
-  min-height: 1.1em;
   font-size: 0.7rem;
   letter-spacing: 0.08em;
-  text-transform: none;
   opacity: 0.88;
 }
 
@@ -1218,14 +1171,14 @@ onUnmounted(() => {
     filter: blur(10px);
     transform: scale(1.06);
     letter-spacing: 0.01em;
-    text-shadow: 0 0 40px rgba(255, 106, 26, 0.15);
+    text-shadow: 0 0 40px rgba(var(--flame-rgb), 0.15);
   }
   55% {
     opacity: 0.92;
     filter: blur(3px);
     transform: scale(1.02);
     letter-spacing: -0.04em;
-    text-shadow: 0 0 24px rgba(255, 106, 26, 0.08);
+    text-shadow: 0 0 24px rgba(var(--flame-rgb), 0.08);
   }
   80% {
     opacity: 1;
@@ -1272,14 +1225,8 @@ onUnmounted(() => {
   }
 }
 
-.meta .sep::before {
-  content: '·';
-  margin-right: 12px;
-  color: #ddd;
-}
-
 .submeta.warn {
-  color: #c45a2a;
+  color: var(--warn);
 }
 
 .app.quota .scene-wrap {
@@ -1331,7 +1278,7 @@ onUnmounted(() => {
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(0, 0, 0, 0.2);
+  color: var(--ink-faint);
   opacity: 0;
   transition: opacity 0.7s ease;
 }
@@ -1360,17 +1307,16 @@ onUnmounted(() => {
 
 @keyframes pulse-dot {
   0% {
-    box-shadow: 0 0 0 0 rgba(255, 106, 26, 0.4);
+    box-shadow: 0 0 0 0 rgba(var(--flame-rgb), 0.4);
   }
   70% {
-    box-shadow: 0 0 0 14px rgba(255, 106, 26, 0);
+    box-shadow: 0 0 0 14px rgba(var(--flame-rgb), 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(255, 106, 26, 0);
+    box-shadow: 0 0 0 0 rgba(var(--flame-rgb), 0);
   }
 }
 
-/* 移动端/窄屏：顶栏刊号易与操作按钮重叠，直接隐藏 */
 /* 平板及以下 / 窄桌面：顶栏刊号直接隐藏，避免与操作区重叠 */
 @media (max-width: 1024px) {
   .pub-issue {
@@ -1384,20 +1330,19 @@ onUnmounted(() => {
     padding-right: calc(14px + var(--safe-right));
   }
 
-  .top,
-  .place,
-  .top-actions {
-    height: 40px;
+  .top {
+    height: 44px;
   }
 
   .place {
-    line-height: 40px;
-    font-size: 0.88rem;
-    padding-right: 10px;
+    height: 34px;
+    padding: 0 11px;
+    gap: 5px;
+    font-size: 0.8rem;
   }
 
   .top-actions {
-    padding-left: 10px;
+    padding: 2px;
   }
 
   .pub-issue {
@@ -1405,14 +1350,14 @@ onUnmounted(() => {
   }
 
   .icon-btn {
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
   }
 
   /* 移动端语言按钮只保留 EN/中，省宽度 */
   .icon-btn.lang-btn {
-    width: 34px;
-    min-width: 34px;
+    width: 32px;
+    min-width: 32px;
     padding: 0;
   }
 
@@ -1480,9 +1425,7 @@ onUnmounted(() => {
   .foot,
   .ignite,
   .warm-flash,
-  .icon-btn,
-  .geo,
-  .geo-shapes {
+  .icon-btn {
     transition: none !important;
     animation: none !important;
   }
@@ -1506,12 +1449,3 @@ onUnmounted(() => {
   }
 }
 </style>
-
-
-
-
-
-
-
-
-

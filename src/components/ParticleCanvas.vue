@@ -20,6 +20,7 @@ let dpr = 1
 let running = false
 let listenersBound = false
 let motionMq = null
+let darkMq = null
 
 const CONFIG = {
   baseCount: 36,
@@ -231,7 +232,8 @@ function draw() {
 
   // 桌面端稀疏连线：步长抽样，降低 O(n^2) 成本
   if (width > 768 && particles.length > 1) {
-    ctx.strokeStyle = `rgba(0, 0, 0, ${CONFIG.linkAlpha * (0.3 + props.intensity * 0.7)})`
+    const linkRgb = darkMq?.matches ? '255, 255, 255' : '0, 0, 0'
+    ctx.strokeStyle = `rgba(${linkRgb}, ${CONFIG.linkAlpha * (0.3 + props.intensity * 0.7)})`
     ctx.lineWidth = 0.5
     const step = particles.length > 70 ? 2 : 1
     for (let i = 0; i < particles.length; i += step) {
@@ -283,6 +285,7 @@ onMounted(() => {
     motionMq = window.matchMedia('(prefers-reduced-motion: reduce)')
     motionMq.addEventListener?.('change', syncRuntime)
     motionMq.addListener?.(syncRuntime)
+    darkMq = window.matchMedia('(prefers-color-scheme: dark)')
   } catch {
     /* ignore */
   }

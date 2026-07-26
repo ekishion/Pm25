@@ -1,16 +1,48 @@
 :root {
+  color-scheme: light dark;
+
+  /* ── 语义色板：浅色（暖纸白） ── */
   --bg: #fbfaf8;
   --bg-pure: #ffffff;
   --text: #141414;
-  --text-soft: #7a7a7a;
-  --text-faint: #a8a8a8;
+  --text-soft: #6e6e73;
+  --text-faint: #a1a1a6;
+  /* 角标 / 幽灵墨色（刊号、坐标等纪实元素） */
+  --ink-faint: rgba(0, 0, 0, 0.22);
+  --ink-ghost: rgba(0, 0, 0, 0.1);
   --line: rgba(0, 0, 0, 0.08);
   --line-soft: rgba(0, 0, 0, 0.05);
+
+  /* ── 材质：毛玻璃层级 ── */
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-bg-strong: rgba(255, 255, 255, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.55);
+  --glass-inner: rgba(255, 255, 255, 0.7);
+  --chip-bg: rgba(255, 255, 255, 0.5);
+  --hover-bg: rgba(0, 0, 0, 0.05);
+  --seg-bg: rgba(0, 0, 0, 0.045);
+  --scrim: rgba(255, 255, 255, 0.5);
+  --btn-primary-bg: #141414;
+  --btn-primary-fg: #ffffff;
+
+  /* ── 品牌 ── */
   --flame: #ff6a1a;
+  --flame-rgb: 255, 106, 26;
   --flame-soft: #ffb15a;
+  --warn: #c45a2a;
   --wood: #c4a07a;
   --wood-deep: #8b6240;
   --head: #2a1c14;
+
+  /* ── 圆角（连续圆角气质） ── */
+  --radius-l: 28px;
+  --radius-m: 20px;
+  --radius-s: 14px;
+
+  /* ── 动效令牌：全站统一缓动 ── */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-focus: cubic-bezier(0.16, 1, 0.3, 1);
   /* 编辑排版：系统栈，无外链字体 */
   --font: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', 'Noto Sans SC', sans-serif;
@@ -24,6 +56,34 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* ── 深色模式：暖黑，火光成为主角 ── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131110;
+    --bg-pure: #1d1a18;
+    --text: #f5f3f0;
+    --text-soft: #a8a5a0;
+    --text-faint: #6f6c67;
+    --ink-faint: rgba(255, 255, 255, 0.24);
+    --ink-ghost: rgba(255, 255, 255, 0.1);
+    --line: rgba(255, 255, 255, 0.1);
+    --line-soft: rgba(255, 255, 255, 0.06);
+
+    --glass-bg: rgba(34, 31, 29, 0.55);
+    --glass-bg-strong: rgba(36, 33, 31, 0.85);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-inner: rgba(255, 255, 255, 0.05);
+    --chip-bg: rgba(255, 255, 255, 0.06);
+    --hover-bg: rgba(255, 255, 255, 0.08);
+    --seg-bg: rgba(255, 255, 255, 0.06);
+    --scrim: rgba(0, 0, 0, 0.55);
+    --btn-primary-bg: #f5f3f0;
+    --btn-primary-fg: #141414;
+
+    --warn: #e08050;
+  }
 }
 
 *,
@@ -59,7 +119,7 @@ body {
   -webkit-touch-callout: none;
 }
 
-/* 纸感微噪：消除纯白塑料感，保持极轻 */
+/* 纸感微噪：消除纯色塑料感，保持极轻 */
 body::before {
   content: '';
   position: fixed;
@@ -70,6 +130,14 @@ body::before {
   mix-blend-mode: multiply;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size: 180px 180px;
+}
+
+@media (prefers-color-scheme: dark) {
+  /* 深色下改用 screen 混合，噪点以微光呈现 */
+  body::before {
+    mix-blend-mode: screen;
+    opacity: 0.05;
+  }
 }
 
 button,
@@ -102,90 +170,6 @@ textarea {
 html.custom-cursor,
 html.custom-cursor * {
   cursor: none !important;
-}
-
-/* 毛玻璃面板 */
-.glass {
-  background: rgba(255, 255, 255, 0.62);
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
-}
-
-.glass-subtle {
-  background: rgba(255, 255, 255, 0.42);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-/* 弹性过渡工具 */
-.spring-hover {
-  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.spring-hover:hover {
-  transform: scale(1.05);
-}
-
-.spring-hover:active {
-  transform: scale(0.96);
-  transition-duration: 0.15s;
-}
-
-/* 浮动几何装饰 */
-@keyframes float-drift {
-  0%, 100% {
-    transform: translate(0, 0) rotate(0deg);
-    opacity: 0.08;
-  }
-  25% {
-    transform: translate(12px, -18px) rotate(45deg);
-    opacity: 0.12;
-  }
-  50% {
-    transform: translate(-8px, -32px) rotate(90deg);
-    opacity: 0.06;
-  }
-  75% {
-    transform: translate(16px, -14px) rotate(135deg);
-    opacity: 0.1;
-  }
-}
-
-@keyframes float-drift-alt {
-  0%, 100% {
-    transform: translate(0, 0) rotate(0deg);
-    opacity: 0.06;
-  }
-  33% {
-    transform: translate(-16px, -24px) rotate(-60deg);
-    opacity: 0.1;
-  }
-  66% {
-    transform: translate(10px, -40px) rotate(-120deg);
-    opacity: 0.04;
-  }
-}
-
-/* 交错入场延迟工具类 */
-.stagger-1 { animation-delay: 0.08s; }
-.stagger-2 { animation-delay: 0.16s; }
-.stagger-3 { animation-delay: 0.24s; }
-.stagger-4 { animation-delay: 0.32s; }
-.stagger-5 { animation-delay: 0.40s; }
-
-/* 磁性按钮光晕 */
-@keyframes magnetic-glow {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(255, 106, 26, 0);
-  }
-  50% {
-    box-shadow: 0 0 24px 4px rgba(255, 106, 26, 0.12);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
