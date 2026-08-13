@@ -85,8 +85,8 @@ describe('fetchAirQualityOnce', () => {
     expect(r.pm25).toBe(28)
   })
 
-  it('hits overall deadline and falls to meteo', async () => {
-    const r = await fetchAirQualityOnce(31.3, 120.6, {
+  it('stops at the overall deadline when no fallback time remains', async () => {
+    await expect(fetchAirQualityOnce(31.3, 120.6, {
       primaryWaitMs: 80,
       overallDeadlineMs: 50,
       sources: {
@@ -100,7 +100,23 @@ describe('fetchAirQualityOnce', () => {
         meteo: () =>
           delay(5, { aqi: 50, pm25: 35, source: 'meteo', updatedAt: 't' }),
       },
-    })
-    expect(r.source).toBe('meteo')
+    })).rejects.toThrow('air deadline')
+  })
+
+  it('does not let the meteo fallback exceed the overall deadline', async () => {
+    const started = Date.now()
+    await expect(
+      fetchAirQualityOnce(31.3, 120.6, {
+        primaryWaitMs: 20,
+        overallDeadlineMs: 40,
+        sources: {
+          qweather: () => delay(200, new Error('x'), true),
+          caiyun: () => delay(200, new Error('y'), true),
+          waqi: () => delay(200, new Error('z'), true),
+          meteo: () => delay(100, { aqi: 50, pm25: 35, source: 'meteo', updatedAt: 't' }),
+        },
+      }),
+    ).rejects.toThrow('air deadline')
+    expect(Date.now() - started).toBeLessThan(90)
   })
 })

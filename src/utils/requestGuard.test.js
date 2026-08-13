@@ -24,6 +24,49 @@ describe('guardedRequest', () => {
     expect(fn).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps a forced replacement request deduped after the old request settles', async () => {
+    const resolvers = []
+    const fn = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve)
+        }),
+    )
+
+    const first = guardedRequest('race', fn)
+    const replacement = guardedRequest('race', fn, { force: true })
+
+    resolvers[0]({ version: 1 })
+    await first
+
+    const stillPending = guardedRequest('race', fn)
+    expect(fn).toHaveBeenCalledTimes(2)
+
+    resolvers[1]({ version: 2 })
+    await expect(replacement).resolves.toEqual({ version: 2 })
+    await expect(stillPending).resolves.toEqual({ version: 2 })
+  })
+
+  it('does not cache an old request error over a forced replacement', async () => {
+    const rejectors = []
+    const fn = vi.fn(
+      () =>
+        new Promise((resolve, reject) => {
+          rejectors.push({ resolve, reject })
+        }),
+    )
+
+    const first = guardedRequest('error-race', fn)
+    const replacement = guardedRequest('error-race', fn, { force: true })
+
+    rejectors[0].reject(new Error('old error'))
+    await expect(first).rejects.toThrow('old error')
+
+    rejectors[1].resolve({ version: 2 })
+    await expect(replacement).resolves.toEqual({ version: 2 })
+    await expect(guardedRequest('error-race', fn)).resolves.toEqual({ version: 2 })
+  })
+
   it('returns cache within ttl', async () => {
     const fn = vi.fn(async () => ({ v: 1 }))
     await guardedRequest('k2', fn, { ttlMs: 60_000 })

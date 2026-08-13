@@ -1,5 +1,5 @@
 /* Match — minimal offline shell */
-const CACHE = 'match-shell-v2'
+const CACHE = 'match-shell-v3'
 const ASSETS = ['/', '/index.html', '/404.html', '/manifest.webmanifest', '/icon.svg']
 
 self.addEventListener('install', (event) => {
@@ -24,6 +24,22 @@ self.addEventListener('fetch', (event) => {
   // 永不缓存 API / 第三方数据
   if (url.pathname.startsWith('/api/')) return
   if (url.origin !== self.location.origin) return
+
+  // HTML 入口必须优先取网络，否则固定的旧入口会一直引用旧的 hash 资源。
+  if (req.mode === 'navigate' || req.headers.get('accept')?.includes('text/html')) {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res.ok) {
+            const copy = res.clone()
+            caches.open(CACHE).then((cache) => cache.put(req, copy))
+          }
+          return res
+        })
+        .catch(() => caches.match(req).then((cached) => cached || caches.match('/index.html'))),
+    )
+    return
+  }
 
   event.respondWith(
     caches.match(req).then((cached) => {

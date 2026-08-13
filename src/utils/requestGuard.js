@@ -80,18 +80,24 @@ export async function guardedRequest(key, fn, opts = {}) {
     if (pending) return pending
   }
 
-  const task = (async () => {
+  let task
+  task = (async () => {
     try {
       const value = await fn()
-      const entry = { ok: true, at: now(), value }
-      memory.set(key, entry)
-      writeSession(key, entry)
+      // 强制刷新可能已经替换了当前任务；旧任务结果不能覆盖新缓存。
+      if (inflight.get(key) === task) {
+        const entry = { ok: true, at: now(), value }
+        memory.set(key, entry)
+        writeSession(key, entry)
+      }
       return value
     } catch (error) {
-      memory.set(key, { ok: false, at: now(), error })
+      if (inflight.get(key) === task) {
+        memory.set(key, { ok: false, at: now(), error })
+      }
       throw error
     } finally {
-      inflight.delete(key)
+      if (inflight.get(key) === task) inflight.delete(key)
     }
   })()
 

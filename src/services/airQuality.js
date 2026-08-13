@@ -236,6 +236,19 @@ export async function fetchAirQualityOnce(la, lo, opts = {}) {
       return r
     })
 
+  const runWithRemaining = (fn, name) => {
+    const remaining = remain()
+    if (remaining <= 0) return Promise.reject(new Error('air deadline'))
+
+    let timer
+    return Promise.race([
+      wrap(fn, name),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('air deadline')), remaining)
+      }),
+    ]).finally(() => clearTimeout(timer))
+  }
+
   const qweatherP = wrap(sources.qweather, 'qweather')
   const caiyunP = wrap(sources.caiyun, 'caiyun')
   const waqiP = wrap(sources.waqi, 'waqi')
@@ -249,7 +262,7 @@ export async function fetchAirQualityOnce(la, lo, opts = {}) {
   if (hasReading(qwQuick)) return qwQuick
   if (remain() <= 0) {
     // 总时限到：直接兜底
-    return wrap(sources.meteo, 'meteo')
+    return runWithRemaining(sources.meteo, 'meteo')
   }
 
   // 彩云次选
@@ -259,7 +272,7 @@ export async function fetchAirQualityOnce(la, lo, opts = {}) {
     sleep(cyWait).then(() => null),
   ])
   if (hasReading(caiyunQuick)) return caiyunQuick
-  if (remain() <= 0) return wrap(sources.meteo, 'meteo')
+  if (remain() <= 0) return runWithRemaining(sources.meteo, 'meteo')
 
   // WAQI 短等
   const waqiWait = Math.min(500, remain())
@@ -290,7 +303,7 @@ export async function fetchAirQualityOnce(la, lo, opts = {}) {
 
   // 兜底模型
   try {
-    const meteo = await wrap(sources.meteo, 'meteo')
+    const meteo = await runWithRemaining(sources.meteo, 'meteo')
     if (hasReading(meteo)) return meteo
   } catch (e) {
     throw new Error(sanitizeError(e, 'air'))
