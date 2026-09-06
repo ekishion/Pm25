@@ -85,12 +85,12 @@ describe('fetchAirQualityOnce', () => {
     expect(r.pm25).toBe(28)
   })
 
-  it('stops at the overall deadline when no fallback time remains', async () => {
-    await expect(fetchAirQualityOnce(31.3, 120.6, {
+  it('still reaches meteo when primaries hang past the overall deadline', async () => {
+    const r = await fetchAirQualityOnce(31.3, 120.6, {
       primaryWaitMs: 80,
       overallDeadlineMs: 50,
       sources: {
-        // 优先源很慢
+        // 优先源很慢，把总时限耗光
         qweather: () =>
           delay(200, { aqi: 11, pm25: 7, source: 'qweather', updatedAt: 't' }),
         caiyun: () =>
@@ -100,23 +100,27 @@ describe('fetchAirQualityOnce', () => {
         meteo: () =>
           delay(5, { aqi: 50, pm25: 35, source: 'meteo', updatedAt: 't' }),
       },
-    })).rejects.toThrow('air deadline')
+    })
+    expect(r.source).toBe('meteo')
+    expect(r.aqi).toBe(50)
   })
 
-  it('does not let the meteo fallback exceed the overall deadline', async () => {
+  it('bounds the meteo fallback by its own window, not the overall deadline', async () => {
     const started = Date.now()
     await expect(
       fetchAirQualityOnce(31.3, 120.6, {
         primaryWaitMs: 20,
         overallDeadlineMs: 40,
+        meteoWindowMs: 40,
         sources: {
           qweather: () => delay(200, new Error('x'), true),
           caiyun: () => delay(200, new Error('y'), true),
           waqi: () => delay(200, new Error('z'), true),
-          meteo: () => delay(100, { aqi: 50, pm25: 35, source: 'meteo', updatedAt: 't' }),
+          meteo: () => delay(500, { aqi: 50, pm25: 35, source: 'meteo', updatedAt: 't' }),
         },
       }),
-    ).rejects.toThrow('air deadline')
-    expect(Date.now() - started).toBeLessThan(90)
+    ).rejects.toThrow('meteo deadline')
+    // 窗口生效：总耗时应接近 primaryWait*2 + meteoWindow，而不是等 meteo 自己完成
+    expect(Date.now() - started).toBeLessThan(150)
   })
 })

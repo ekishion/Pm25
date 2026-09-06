@@ -54,8 +54,8 @@ npm run dev
 | `QWEATHER_KEY` | 和风空气（**优先**） | **否** |
 | `QWEATHER_HOST` | 可选 API Host | **否** |
 | `CAIYUN_TOKEN` | 彩云备用 | **否** |
-| `WAQI_TOKEN` | WAQI 备用（默认 `demo`） | **否** |
-| `DAILY_API_LIMIT` | 每日上游 `/api` 次数（默认 `200`；`0` 不限制） | **否** |
+| `WAQI_TOKEN` | WAQI 备用（不填自动跳过该源） | **否** |
+| `DAILY_API_LIMIT` | 每日上游 `/api` 次数（默认 `500`；`0` 不限制） | **否** |
 
 > **不要用 `VITE_` 前缀写密钥。**
 

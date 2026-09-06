@@ -4,7 +4,8 @@
  * 公开源：Open-Meteo（无密钥，模型值，仅兜底）
  *
  * 优先级：和风（国标站点）→ 彩云 → WAQI → Open-Meteo
- * 总超时 OVERALL_DEADLINE_MS 强制进入兜底，避免分级等待累加到 8–10s。
+ * 总超时 OVERALL_DEADLINE_MS 约束优先源，避免分级等待累加到 8–10s；
+ * 兜底源用独立窗口（METEO_WINDOW_MS）：优先源耗光时限时，兜底也必须真正发出去。
  */
 
 import { cnAqiFromPm25, resolveDisplayAqi } from '../utils/aqi'
@@ -19,6 +20,8 @@ const TIMEOUT = 4500
 const PRIMARY_WAIT_MS = 2200
 /** 整条空气链路硬上限（含兜底前的优先源） */
 export const OVERALL_DEADLINE_MS = 6500
+/** 兜底源独立窗口（仅优先源全部失败时才会等满） */
+const METEO_WINDOW_MS = 4500
 
 export function normalize(partial) {
   let aqi = Number(partial.aqi)
@@ -215,6 +218,7 @@ export async function fromOpenMeteo(lat, lon, { fetchImpl = fetchJson } = {}) {
  *   },
  *   primaryWaitMs?: number,
  *   overallDeadlineMs?: number,
+ *   meteoWindowMs?: number,
  * }} [opts]
  */
 export async function fetchAirQualityOnce(la, lo, opts = {}) {
@@ -236,15 +240,15 @@ export async function fetchAirQualityOnce(la, lo, opts = {}) {
       return r
     })
 
-  const runWithRemaining = (fn, name) => {
-    const remaining = remain()
-    if (remaining <= 0) return Promise.reject(new Error('air deadline'))
-
+  // 兜底源独立窗口：不受总时限约束。若也被总限钳住，
+  // 优先源耗光时间时兜底根本发不出去，直接 'air empty'（饿死）。
+  const tryMeteo = () => {
+    const windowMs = Math.max(1, opts.meteoWindowMs ?? METEO_WINDOW_MS)
     let timer
     return Promise.race([
-      wrap(fn, name),
+      wrap(sources.meteo, 'meteo'),
       new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error('air deadline')), remaining)
+        timer = setTimeout(() => reject(new Error('meteo deadline')), windowMs)
       }),
     ]).finally(() => clearTimeout(timer))
   }
@@ -262,7 +266,7 @@ export async function fetchAirQualityOnce(la, lo, opts = {}) {
   if (hasReading(qwQuick)) return qwQuick
   if (remain() <= 0) {
     // 总时限到：直接兜底
-    return runWithRemaining(sources.meteo, 'meteo')
+    return tryMeteo()
   }
 
   // 彩云次选
@@ -272,7 +276,7 @@ export async function fetchAirQualityOnce(la, lo, opts = {}) {
     sleep(cyWait).then(() => null),
   ])
   if (hasReading(caiyunQuick)) return caiyunQuick
-  if (remain() <= 0) return runWithRemaining(sources.meteo, 'meteo')
+  if (remain() <= 0) return tryMeteo()
 
   // WAQI 短等
   const waqiWait = Math.min(500, remain())
@@ -303,7 +307,7 @@ export async function fetchAirQualityOnce(la, lo, opts = {}) {
 
   // 兜底模型
   try {
-    const meteo = await runWithRemaining(sources.meteo, 'meteo')
+    const meteo = await tryMeteo()
     if (hasReading(meteo)) return meteo
   } catch (e) {
     throw new Error(sanitizeError(e, 'air'))

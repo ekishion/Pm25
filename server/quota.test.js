@@ -3,6 +3,7 @@ import {
   DEFAULT_DAILY_API_LIMIT,
   parseDailyLimit,
   peekQuota,
+  refundQuota,
   resetQuotaForTests,
   takeQuota,
   utcDayKey,
@@ -13,9 +14,9 @@ beforeEach(() => {
 })
 
 describe('parseDailyLimit', () => {
-  it('defaults to 200', () => {
+  it('defaults to 500', () => {
     expect(parseDailyLimit({})).toBe(DEFAULT_DAILY_API_LIMIT)
-    expect(parseDailyLimit({ DAILY_API_LIMIT: '' })).toBe(200)
+    expect(parseDailyLimit({ DAILY_API_LIMIT: '' })).toBe(500)
   })
 
   it('parses positive ints', () => {
@@ -58,5 +59,31 @@ describe('takeQuota', () => {
     const peek = peekQuota({ limit: 3, key: 'p' })
     expect(peek.used).toBe(1)
     expect(peek.remaining).toBe(2)
+  })
+})
+
+describe('refundQuota', () => {
+  it('refunds a taken slot', () => {
+    takeQuota({ limit: 2, key: 'r' })
+    takeQuota({ limit: 2, key: 'r' })
+    refundQuota({ limit: 2, key: 'r' })
+    const peek = peekQuota({ limit: 2, key: 'r' })
+    expect(peek.used).toBe(1)
+    expect(peek.remaining).toBe(1)
+  })
+
+  it('never drops below zero', () => {
+    refundQuota({ limit: 2, key: 'fresh' })
+    expect(peekQuota({ limit: 2, key: 'fresh' }).used).toBe(0)
+  })
+
+  it('ignores unknown day buckets', () => {
+    takeQuota({ limit: 2, key: 'd', now: new Date('2026-07-21T12:00:00Z') })
+    refundQuota({ limit: 2, key: 'd', now: new Date('2026-07-22T12:00:00Z') })
+    expect(peekQuota({ limit: 2, key: 'd', now: new Date('2026-07-21T12:00:00Z') }).used).toBe(1)
+  })
+
+  it('no-ops when unlimited', () => {
+    expect(() => refundQuota({ limit: 0, key: 'u' })).not.toThrow()
   })
 })

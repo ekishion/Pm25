@@ -3,8 +3,8 @@
  *
  * 0) 浏览器 GPS —— 已授权时静默使用；用户点击城市名可显式请求（真实坐标 → 最近站点空气）
  * 1) ipwho / ipip 抢城市（ipwho 常带坐标）
- * 2) 有 IPv4 时用高德 IP（同源代理）补中文名 + 矩形中心
- * 3) 仍无有效坐标时用高德地理编码 city → lat/lon
+ * 2) 双双失败 → 高德 IP 定位（同源代理；代理注入服务端可见的客户端 IPv4）补中文名 + 矩形中心
+ * 3) 有可信城市名 → 高德地理编码 city → lat/lon（失败再试高德 IP / 城市中心表）
  *
  * 注意：浏览器直连会撞 CORS 的源一律不走（如太平洋 IP）。
  * 严禁把 null 坐标写成 0,0（会打到 Null Island，空气读数全 0）
@@ -151,9 +151,14 @@ async function fromIpWho() {
   })
 }
 
-async function fromAmapIp(ip) {
-  if (!isIpv4(ip)) throw new Error('amap needs ipv4')
-  const data = await fetchJson(`/api/amap/v3/ip?ip=${encodeURIComponent(ip)}`, {
+/**
+ * 高德 IP 定位：有明确 IPv4 时用之；不传则由代理注入请求方 IP
+ * （代理从 CF-Connecting-IP / x-real-ip / X-Forwarded-For 提取，见 server/proxy.mjs）
+ */
+async function fromAmapIp(ip = '') {
+  if (ip && !isIpv4(ip)) throw new Error('amap needs ipv4')
+  const qs = ip ? `?ip=${encodeURIComponent(ip)}` : ''
+  const data = await fetchJson(`/api/amap/v3/ip${qs}`, {
     timeout: T.amap,
   })
   if (String(data.status) !== '1') throw new Error(asText(data.info) || 'amap')
@@ -348,14 +353,12 @@ async function ensureCoords(loc) {
     }
   }
 
-  // 无城市名时：IPv4 → 高德 IP 矩形
-  if (loc.ip && isIpv4(loc.ip)) {
-    try {
-      const amap = await fromAmapIp(loc.ip)
-      if (usable(amap)) return amap
-    } catch {
-      /* ignore */
-    }
+  // 仍无坐标：高德 IP 定位（有 IPv4 用之；否则代理按请求方 IP 注入）
+  try {
+    const amap = await fromAmapIp(isIpv4(loc.ip) ? loc.ip : '')
+    if (usable(amap)) return amap
+  } catch {
+    /* ignore */
   }
 
   // 最后：若仍有任意有效坐标则用（可能来自 ipwho）
@@ -376,10 +379,12 @@ async function detectLocationOnce(opts = {}) {
   }
 
   const bag = []
+  let lastIpv4 = ''
   const push = (p) =>
     p
       .then((loc) => {
         if (hasCity(loc)) bag.push(loc)
+        if (isIpv4(loc?.ip)) lastIpv4 = loc.ip
         return loc
       })
       .catch(() => null)
@@ -392,7 +397,15 @@ async function detectLocationOnce(opts = {}) {
   }
 
   let merged = mergeHints(bag)
-  if (!merged) throw new Error('locate empty')
+  if (!merged) {
+    // ipip（浏览器直连常撞 CORS）/ ipwho 双双没给出城市：
+    // 还剩代理侧高德 IP 一条线索（代理注入服务端可见的客户端 IPv4）
+    try {
+      merged = await fromAmapIp(lastIpv4)
+    } catch {
+      throw new Error('locate empty')
+    }
+  }
 
   merged = await ensureCoords(merged)
   if (!usable(merged)) throw new Error('locate incomplete')

@@ -1,12 +1,15 @@
 /**
- * 城市展示名：用公开地理服务按语言解析，替代手写字典
+ * 城市展示名：按坐标 / 名称与语言解析，替代手写字典
  *
  * 策略：
- * 1) 有坐标 → 逆地理（BigDataCloud，免 key、CORS 友好、支持 localityLanguage）
+ * 1) 有坐标：
+ *    - 国内（含港澳台）：高德 regeo（同源代理，国内可达、中文名准）优先，
+ *      失败落 BigDataCloud；en locale 反过来（BDC 出本地化名，高德兜底）
+ *    - 海外：BigDataCloud（免 key、CORS 友好、支持 localityLanguage）
  * 2) 仅有名字 → Open-Meteo 地理编码（language=zh|en）
- * 3) 失败 → cleanCityName 兜底
+ * 3) 失败 → cleanCityName 兜底；兜底结果不写缓存，条件恢复后仍会重试
  *
- * 结果按 city|lat,lon|locale 缓存在 sessionStorage
+ * 成功解析的标签按 city|lat,lon|locale 缓存在 sessionStorage
  */
 
 import { fetchJson } from './http'
@@ -83,6 +86,30 @@ async function reverseBigDataCloud(lat, lon, locale) {
   return name
 }
 
+/** 中国范围粗判（含港澳台），决定逆地理优先走高德还是 BigDataCloud */
+function isInChina(lat, lon) {
+  return lat >= 18 && lat <= 54 && lon >= 73 && lon <= 135
+}
+
+/**
+ * 逆地理：国内坐标 → 中文城市名
+ * 高德 regeo（同源代理，需服务端 AMAP_KEY）；直辖市 city 为空时回落 province
+ */
+async function reverseByAmapRegeo(lat, lon) {
+  const loc = `${lon},${lat}`
+  const data = await fetchJson(
+    `/api/amap/v3/geocode/regeo?location=${encodeURIComponent(loc)}`,
+    { timeout: 4500 },
+  )
+  if (String(data.status) !== '1') throw new Error('regeo')
+  const comp = data.regeocode?.addressComponent
+  if (!comp) throw new Error('regeo empty')
+  const name =
+    cleanCityName(comp.city) || cleanCityName(comp.district) || cleanCityName(comp.province)
+  if (!name) throw new Error('regeo name')
+  return name
+}
+
 /**
  * 正地理：名称 → 目标语言下的规范名
  * Open-Meteo geocoding
@@ -119,18 +146,33 @@ export async function resolvePlaceLabel(input = {}) {
   const cached = readCache(key)
   if (cached) return cached
 
-  // 1) 有坐标：逆地理最准（语言由 localityLanguage 控制）
-  if (isValidCoord(lat, lon)) {
-    try {
-      const label = await reverseBigDataCloud(lat, lon, locale)
-      writeCache(key, label)
-      return label
-    } catch {
-      /* fall through */
+  const hasCoords = isValidCoord(lat, lon)
+  const china = hasCoords && isInChina(lat, lon)
+
+  // 1) 有坐标：按地区与语言选逆地理顺序（惰性调用，失败再试下一家）
+  if (hasCoords) {
+    const attempts =
+      china && locale === 'zh'
+        ? [
+            () => reverseByAmapRegeo(lat, lon),
+            () => reverseBigDataCloud(lat, lon, locale),
+          ]
+        : [
+            () => reverseBigDataCloud(lat, lon, locale),
+            ...(china ? [() => reverseByAmapRegeo(lat, lon)] : []),
+          ]
+    for (const attempt of attempts) {
+      try {
+        const label = await attempt()
+        writeCache(key, label)
+        return label
+      } catch {
+        /* fall through */
+      }
     }
   }
 
-  // 2) 有名字：按目标语言搜索规范名
+  // 2) 有名字：按目标语言搜索规范名（跳过占位 / 未知）
   if (city && city !== '未知' && city !== '当前位置') {
     try {
       const label = await searchOpenMeteo(city, locale)
@@ -141,10 +183,8 @@ export async function resolvePlaceLabel(input = {}) {
     }
   }
 
-  // 3) 兜底
-  const fallback = cleanCityName(city) || city || ''
-  if (fallback) writeCache(key, fallback)
-  return fallback
+  // 3) 兜底：不写缓存 —— 占位符 / 原始名只是临时展示，下次仍应重试解析
+  return cleanCityName(city) || city || ''
 }
 
 /** 测试 / 调试 */

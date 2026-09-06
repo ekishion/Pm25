@@ -2,8 +2,9 @@
  * 日查询配额（进程内内存 Map）
  *
  * 行为：
- * - 默认每天 200 次上游代理调用
+ * - 默认每天 500 次上游代理调用（一次页面加载约消耗 3–6 次）
  * - env.DAILY_API_LIMIT 可覆盖；0 / 负数 = 不限制
+ * - 上游 5xx / 超时的预扣额度通过 refundQuota 退还（见 proxy.mjs）
  *
  * Serverless / Edge 注意（Vercel Edge · Cloudflare Workers / Pages）：
  * - 每个 isolate / runner 的内存相互隔离，Map 不会跨实例共享
@@ -18,7 +19,7 @@
 /** @type {Map<string, { day: string, count: number }>} */
 const buckets = new Map()
 
-export const DEFAULT_DAILY_API_LIMIT = 200
+export const DEFAULT_DAILY_API_LIMIT = 500
 
 export function parseDailyLimit(env = {}) {
   const raw = env.DAILY_API_LIMIT
@@ -65,6 +66,20 @@ export function takeQuota(opts = {}) {
     used: b.count,
     day,
   }
+}
+
+/**
+ * 退还一次预扣额度：上游 5xx / 超时等未产生有效数据时调用。
+ * 尽力而为：仅对同 isolate 内存桶生效；跨日 / 桶不存在 / 不限量时忽略。
+ */
+export function refundQuota(opts = {}) {
+  const limit = opts.limit != null ? opts.limit : DEFAULT_DAILY_API_LIMIT
+  const day = utcDayKey(opts.now || new Date())
+  const key = opts.key || 'global'
+  if (limit <= 0) return
+  const b = buckets.get(key)
+  if (!b || b.day !== day) return
+  b.count = Math.max(0, b.count - 1)
 }
 
 /** 测试用 */

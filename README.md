@@ -54,8 +54,8 @@ Copy [`.env.example`](.env.example) → `.env`.
 | `QWEATHER_KEY` | QWeather air quality (**preferred**) | **No** |
 | `QWEATHER_HOST` | Optional API host (default `devapi.qweather.com`) | **No** |
 | `CAIYUN_TOKEN` | Caiyun air fallback | **No** |
-| `WAQI_TOKEN` | WAQI fallback (default `demo`) | **No** |
-| `DAILY_API_LIMIT` | Max upstream `/api` calls per UTC day (default `200`; `0` = unlimited) | **No** |
+| `WAQI_TOKEN` | WAQI fallback (skipped when unset) | **No** |
+| `DAILY_API_LIMIT` | Max upstream `/api` calls per UTC day (default `500`; `0` = unlimited) | **No** |
 
 > **Do not prefix secrets with `VITE_`.** Those are inlined into client JS.
 

@@ -20,7 +20,7 @@ export async function onRequest(context) {
       QWEATHER_KEY: env.QWEATHER_KEY || env.HEWEATHER_KEY,
       QWEATHER_HOST: env.QWEATHER_HOST,
       CAIYUN_TOKEN: env.CAIYUN_TOKEN,
-      WAQI_TOKEN: env.WAQI_TOKEN || 'demo',
+      WAQI_TOKEN: env.WAQI_TOKEN,
       DAILY_API_LIMIT: env.DAILY_API_LIMIT,
     },
     pathSuffix,
