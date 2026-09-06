@@ -27,6 +27,7 @@ Desktop.ini
 # editors
 .idea/
 .vscode/
+.zcode/
 *.swp
 *.swo
 *~
